@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gakusapo CRM v13</title>
+  <title>Gakusapo CRM v14</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -31,6 +31,7 @@
         RadarChart = Recharts.RadarChart, Radar = Recharts.Radar, PolarGrid = Recharts.PolarGrid,
         PolarAngleAxis = Recharts.PolarAngleAxis, Legend = Recharts.Legend, LabelList = Recharts.LabelList;
 function asyncGeneratorStep(n,t,e,r,o,a,c){try{var i=n[a](c),u=i.value;}catch(n){return void e(n);}i.done?t(u):Promise.resolve(u).then(r,o);}function _asyncToGenerator(n){return function(){var t=this,e=arguments;return new Promise(function(r,o){var a=n.apply(t,e);function _next(n){asyncGeneratorStep(a,r,o,_next,_throw,"next",n);}function _throw(n){asyncGeneratorStep(a,r,o,_next,_throw,"throw",n);}_next(void 0);});};}
+function asyncGeneratorStep(n,t,e,r,o,a,c){try{var i=n[a](c),u=i.value;}catch(n){return void e(n);}i.done?t(u):Promise.resolve(u).then(r,o);}function _asyncToGenerator(n){return function(){var t=this,e=arguments;return new Promise(function(r,o){var a=n.apply(t,e);function _next(n){asyncGeneratorStep(a,r,o,_next,_throw,"next",n);}function _throw(n){asyncGeneratorStep(a,r,o,_next,_throw,"throw",n);}_next(void 0);});};}
 
 
 function useResponsive(){
@@ -42,6 +43,29 @@ return()=>window.removeEventListener("resize",handler);
 },[]);
 return{isMobile:w<768,isTablet:w>=768&&w<=1024,w};
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -609,6 +633,8 @@ bbInquiryNo:row.bb_inquiry_no??null,
 company_id:row.company_id??null,
 createdAt:row.created_at?.slice(0,10)??"",
 updatedAt:row.updated_at?.slice(0,10)??"",
+nextCallDate:row.next_call_date??"",
+nextCallNote:row.next_call_note??"",
 comments:[],flagClaim:false,flagBanned:false,adminNotes:[]
 };
 }
@@ -666,6 +692,8 @@ if("revenue"in fields)row.revenue=fields.revenue;
 if("employees"in fields)row.employees=fields.employees;
 if("owner"in fields)row.owner=fields.owner;
 if("source"in fields)row.source=fields.source;
+if("nextCallDate"in fields)row.next_call_date=fields.nextCallDate||null;
+if("nextCallNote"in fields)row.next_call_note=fields.nextCallNote??"";
 if("flagBanned"in fields)row.call_tags=fields.flagBanned?["banned"]:[];
 if("callTags"in fields)row.call_tags=fields.callTags;
 row.updated_at=new Date().toISOString();
@@ -679,7 +707,8 @@ const dbRows=rows.map((r)=>({
 company_name:r.company||"",contact:r.contact||"",title:r.title||"",
 phone:r.phone||"",industry:r.industry||"",prefecture:r.prefecture||"",
 address:r.address||"",url:r.url||"",revenue:r.revenue||"",
-employees:r.employees||"",owner:r.owner||"",source:r.source||""
+employees:r.employees||"",owner:r.owner||"",source:r.source||"",
+list_badge:r.listBadge||""
 }));
 const{data,error}=yield sb.from("teleapo_lists").insert(dbRows).select("id");
 if(error)console.error("teleapo_lists batch insert error:",error);
@@ -769,8 +798,7 @@ approvedBy:row.approved_by??null,
 approvedAt:row.approved_at?.slice?.(0,10)??null,
 rejectNote:row.reject_note??null,
 adminNotes:row.admin_notes??[],
-createdAt:row.created_at?.slice?.(0,10)??"",
-recontactSent:false
+createdAt:row.created_at?.slice?.(0,10)??""
 };
 }
 
@@ -828,8 +856,7 @@ _setItems((prev)=>prev.filter((r)=>r.id!==payload.old.id));
 const item=rowToLostRecord(payload.new);
 _setItems((prev)=>{
 const exists=prev.some((r)=>r.id===item.id);
-
-return exists?prev.map((r)=>r.id===item.id?{...r,...item,recontactSent:r.recontactSent}:r):[item,...prev];
+return exists?prev.map((r)=>r.id===item.id?{...r,...item}:r):[item,...prev];
 });
 }
 }).subscribe();
@@ -933,6 +960,338 @@ function setItems(updater){
 _setItems((prev)=>typeof updater==="function"?updater(prev):updater);
 }
 return[items,setItems];
+}
+
+
+
+function useMembers(){
+const[members,setMembers]=useState([]);
+
+useEffect(()=>{
+let cancelled=false;
+getSupabase().then((sb)=>{
+if(cancelled||!sb)return;
+sb.from("members").select("*").eq("is_active",true).order("name").
+then(({data,error})=>{
+if(cancelled)return;
+if(error){console.error("members load error:",error);return;}
+if(data)setMembers(data.map((m)=>({
+id:m.id,
+name:m.name,
+role:m.role,
+email:m.email||"",
+studentId:m.student_id||""
+})));
+});
+});
+return()=>{cancelled=true;};
+},[]);
+
+return members;
+}
+
+
+
+
+
+const GCAL_SCOPE="https://www.googleapis.com/auth/calendar";
+const GCAL_API="https://www.googleapis.com/calendar/v3";
+
+function useGoogleCalendar(){
+const[accessToken,setAccessToken]=useState(null);
+const[connected,setConnected]=useState(false);
+const[loading,setLoading]=useState(false);
+const[error,setError]=useState("");
+const tokenClientRef=useRef(null);
+const resolveRef=useRef(null);
+
+
+useEffect(()=>{
+if(!window.google?.accounts?.oauth2)return;
+tokenClientRef.current=window.google.accounts.oauth2.initTokenClient({
+client_id:OAUTH_CLIENT_ID,
+scope:GCAL_SCOPE,
+callback:(resp)=>{
+if(resp.error){
+setError("カレンダー認証エラー: "+(resp.error_description||resp.error));
+setConnected(false);
+setLoading(false);
+if(resolveRef.current){resolveRef.current(null);resolveRef.current=null;}
+return;
+}
+setAccessToken(resp.access_token);
+setConnected(true);
+setError("");
+setLoading(false);
+if(resolveRef.current){resolveRef.current(resp.access_token);resolveRef.current=null;}
+}
+});
+},[]);
+
+
+function requestAccess(){
+return new Promise((resolve)=>{
+if(!tokenClientRef.current){
+setError("Google認証が利用できません。ページを再読み込みしてください。");
+resolve(null);
+return;
+}
+resolveRef.current=resolve;
+setLoading(true);
+setError("");
+tokenClientRef.current.requestAccessToken({prompt:""});
+});
+}function
+
+
+getToken(){return _getToken.apply(this,arguments);}function _getToken(){_getToken=_asyncToGenerator(function*(){
+if(accessToken){
+
+try{
+const r=yield fetch(`${GCAL_API}/users/me/calendarList?maxResults=1`,{
+headers:{Authorization:`Bearer ${accessToken}`}
+});
+if(r.ok)return accessToken;
+}catch{}
+
+}
+return yield requestAccess();
+});return _getToken.apply(this,arguments);}function
+
+
+fetchEvents(_x13,_x14){return _fetchEvents.apply(this,arguments);}function _fetchEvents(){_fetchEvents=_asyncToGenerator(function*(timeMin,timeMax){
+const token=yield getToken();
+if(!token)return[];
+try{
+const params=new URLSearchParams({
+timeMin:new Date(timeMin).toISOString(),
+timeMax:new Date(timeMax).toISOString(),
+singleEvents:"true",
+orderBy:"startTime",
+maxResults:"250"
+});
+const r=yield fetch(`${GCAL_API}/calendars/primary/events?${params}`,{
+headers:{Authorization:`Bearer ${token}`}
+});
+if(!r.ok){setError("イベント取得に失敗しました");return[];}
+const data=yield r.json();
+return(data.items||[]).map((ev)=>({
+id:ev.id,
+title:ev.summary||"(無題)",
+date:(ev.start?.date||ev.start?.dateTime?.slice(0,10))??"",
+time:ev.start?.dateTime?ev.start.dateTime.slice(11,16):"",
+endTime:ev.end?.dateTime?ev.end.dateTime.slice(11,16):"",
+allDay:!!ev.start?.date,
+description:ev.description||"",
+location:ev.location||"",
+htmlLink:ev.htmlLink||"",
+_raw:ev
+}));
+}catch(e){
+setError("カレンダー通信エラー: "+e.message);
+return[];
+}
+});return _fetchEvents.apply(this,arguments);}function
+
+
+createEvent(_x15){return _createEvent.apply(this,arguments);}function _createEvent(){_createEvent=_asyncToGenerator(function*({summary,description,date,startTime,endTime,location}){
+const token=yield getToken();
+if(!token)return null;
+const body={
+summary,
+description:description||"",
+location:location||""
+};
+if(startTime){
+body.start={dateTime:`${date}T${startTime}:00`,timeZone:"Asia/Tokyo"};
+body.end={dateTime:`${date}T${endTime||startTime}:00`,timeZone:"Asia/Tokyo"};
+}else{
+body.start={date};
+body.end={date};
+}
+try{
+const r=yield fetch(`${GCAL_API}/calendars/primary/events`,{
+method:"POST",
+headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+body:JSON.stringify(body)
+});
+if(!r.ok){console.error("gcal create error:",yield r.text());return null;}
+const ev=yield r.json();
+return ev.id;
+}catch(e){console.error("gcal create error:",e);return null;}
+});return _createEvent.apply(this,arguments);}function
+
+
+updateEvent(_x16,_x17){return _updateEvent.apply(this,arguments);}function _updateEvent(){_updateEvent=_asyncToGenerator(function*(eventId,{summary,description,date,startTime,endTime,location}){
+const token=yield getToken();
+if(!token)return false;
+const body={summary,description:description||"",location:location||""};
+if(startTime){
+body.start={dateTime:`${date}T${startTime}:00`,timeZone:"Asia/Tokyo"};
+body.end={dateTime:`${date}T${endTime||startTime}:00`,timeZone:"Asia/Tokyo"};
+}else{
+body.start={date};
+body.end={date};
+}
+try{
+const r=yield fetch(`${GCAL_API}/calendars/primary/events/${eventId}`,{
+method:"PATCH",
+headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+body:JSON.stringify(body)
+});
+return r.ok;
+}catch{return false;}
+});return _updateEvent.apply(this,arguments);}function
+
+
+deleteEvent(_x18){return _deleteEvent.apply(this,arguments);}function _deleteEvent(){_deleteEvent=_asyncToGenerator(function*(eventId){
+const token=yield getToken();
+if(!token)return false;
+try{
+const r=yield fetch(`${GCAL_API}/calendars/primary/events/${eventId}`,{
+method:"DELETE",
+headers:{Authorization:`Bearer ${token}`}
+});
+return r.ok||r.status===404;
+}catch{return false;}
+});return _deleteEvent.apply(this,arguments);}
+
+
+function disconnect(){
+if(accessToken&&window.google?.accounts?.oauth2){
+window.google.accounts.oauth2.revoke(accessToken,()=>{});
+}
+setAccessToken(null);
+setConnected(false);
+}
+
+return{connected,loading,error,requestAccess,fetchEvents,createEvent,updateEvent,deleteEvent,disconnect};
+}
+
+
+
+
+function rowToClerkTodo(row){
+return{
+id:row.id,
+customerId:row.deal_id??null,
+_companyId:row.company_id??null,
+company:row.company_name??"",
+contact:"",
+email:"",
+owner:row.requested_by??"",
+type:row.type??"other",
+triggerStage:null,
+status:row.status??"pending",
+memo:row.memo??"",
+completedAt:row.completed_at?.slice?.(0,16)??null,
+completedBy:row.completed_by??null,
+createdAt:row.created_at?.slice?.(0,16)??""
+};
+}
+
+function clerkTodoToRow(t){
+return{
+deal_id:t.customerId||null,
+company_name:t.company??"",
+type:t.type??"other",
+memo:t.memo??"",
+status:t.status??"pending",
+requested_by:t.owner??"",
+completed_by:t.completedBy||null,
+completed_at:t.completedAt?new Date(t.completedAt).toISOString():null
+};
+}
+
+function useClerkTodos(){
+const[items,_setItems]=useState([]);
+const[supaReady,setSupaReady]=useState(false);
+
+useEffect(()=>{
+let cancelled=false;
+getSupabase().then((sb)=>{
+if(cancelled||!sb)return;
+setSupaReady(true);
+sb.from("clerk_todos").select("*").order("created_at",{ascending:false}).
+then(({data,error})=>{
+if(cancelled)return;
+if(error){console.error("clerk_todos load error:",error);return;}
+if(data)_setItems(data.map(rowToClerkTodo));
+});
+});
+return()=>{cancelled=true;};
+},[]);
+
+useEffect(()=>{
+if(!supaReady||!_supabase)return;
+const ch=_supabase.channel("clerk-todos-rt").
+on("postgres_changes",{event:"*",schema:"public",table:"clerk_todos"},(payload)=>{
+if(payload.eventType==="DELETE"){
+_setItems((prev)=>prev.filter((r)=>r.id!==payload.old.id));
+}else{
+const item=rowToClerkTodo(payload.new);
+_setItems((prev)=>{
+const exists=prev.some((r)=>r.id===item.id);
+return exists?prev.map((r)=>r.id===item.id?{...r,...item}:r):[item,...prev];
+});
+}
+}).subscribe();
+return()=>{_supabase.removeChannel(ch);};
+},[supaReady]);
+
+function setItems(updater){
+_setItems((prev)=>typeof updater==="function"?updater(prev):updater);
+}
+return[items,setItems];
+}
+
+
+
+
+
+function useNotice(){
+const[notice,_setNotice]=useState({active:false,title:"",body:"",author:"",date:""});
+const[noticeId,setNoticeId]=useState(null);
+
+useEffect(()=>{
+let cancelled=false;
+getSupabase().then((sb)=>{
+if(cancelled||!sb)return;
+sb.from("notices").select("*").eq("is_open",true).order("created_at",{ascending:false}).limit(1).
+then(({data,error})=>{
+if(cancelled)return;
+if(error){console.error("notices load error:",error);return;}
+if(data&&data.length>0){
+const n=data[0];
+setNoticeId(n.id);
+let title="",body=n.content??"";
+try{const parsed=JSON.parse(n.content);title=parsed.title??"";body=parsed.body??"";}catch{}
+_setNotice({active:true,title,body,author:n.created_by??"",date:n.created_at?.slice(0,10)??""});
+}
+});
+});
+return()=>{cancelled=true;};
+},[]);
+
+const noticeRef=useRef(notice);
+noticeRef.current=notice;function
+
+saveNotice(_x19){return _saveNotice.apply(this,arguments);}function _saveNotice(){_saveNotice=_asyncToGenerator(function*(draftOrFn){
+const draft=typeof draftOrFn==="function"?draftOrFn(noticeRef.current):draftOrFn;
+_setNotice(draft);
+const sb=yield getSupabase();
+if(!sb)return;
+const contentJson=JSON.stringify({title:draft.title??"",body:draft.body??""});
+const row={is_open:!!draft.active,content:contentJson,created_by:draft.author??"",updated_at:new Date().toISOString()};
+if(noticeId){
+yield sb.from("notices").update(row).eq("id",noticeId);
+}else{
+const{data}=yield sb.from("notices").insert(row).select("id").single();
+if(data)setNoticeId(data.id);
+}
+});return _saveNotice.apply(this,arguments);}
+
+return[notice,saveNotice];
 }
 
 
@@ -1076,158 +1435,6 @@ const RA_PHASES=[
 {key:"process",label:"プロセス管理",max:10}];
 
 
-
-const INIT_CUSTOMERS=[
-{
-id:1,company:"株式会社丸山製作所",contact:"山田 太郎",title:"人事部長",
-email:"yamada@maruyama.co.jp",phone:"052-111-2222",owner:"吉村",
-industry:"製造業",employees:120,prefecture:"愛知",
-stage:"⑤",createdAt:"2025-06-02",
-stageHistory:[
-{stage:"①",date:"2025-06-02",note:"初回架電",by:"吉村"},
-{stage:"②",date:"2025-06-03",note:"担当者（山田部長）と接触",by:"吉村"},
-{stage:"③",date:"2025-06-05",note:"6/10アポ取得",by:"吉村"},
-{stage:"④",date:"2025-06-10",note:"担当者問診完了。採用課題を確認",by:"吉村"},
-{stage:"⑤",date:"2025-06-14",note:"上層部（社長）問診実施",by:"吉村"}],
-
-nextAction:{date:"2025-06-20",time:"10:00",content:"上層部問診 → PCへ進める",reminder:true},
-notes:[
-{id:1,date:"2025-06-14",content:"採用課題: 理系エンジニア不足。現状は求人広告のみ。BB診断に強い関心あり。社長も同席予定。",by:"吉村"}],
-
-raScore:{teleapo:12,oi:11,ff:10,pc:0,closing:0,follow:8,attitude:9,process:8}
-},
-{
-id:2,company:"東海精密工業株式会社",contact:"鈴木 健一",title:"代表取締役",
-email:"suzuki@tokai-seimitsu.co.jp",phone:"058-222-3333",owner:"大原",
-industry:"精密加工",employees:85,prefecture:"岐阜",
-stage:"④",createdAt:"2025-06-04",
-stageHistory:[
-{stage:"①",date:"2025-06-04",note:"初回架電",by:"大原"},
-{stage:"②",date:"2025-06-06",note:"鈴木社長と直接接触",by:"大原"},
-{stage:"③",date:"2025-06-09",note:"6/13アポ取得",by:"大原"},
-{stage:"④",date:"2025-06-13",note:"担当者問診実施中",by:"大原"}],
-
-nextAction:{date:"2025-06-19",time:"11:30",content:"担当者問診 → 上層部へ声かけ",reminder:true},
-notes:[
-{id:1,date:"2025-06-13",content:"中途採用に課題。新卒採用は初めて検討中とのこと。",by:"大原"}],
-
-raScore:{teleapo:13,oi:9,ff:0,pc:0,closing:0,follow:7,attitude:10,process:7}
-},
-{
-id:3,company:"名古屋物産株式会社",contact:"田中 恵子",title:"人事採用担当",
-email:"tanaka@nagoya-bussan.co.jp",phone:"052-333-4444",owner:"小島",
-industry:"卸売業",employees:210,prefecture:"愛知",
-stage:"⑥",createdAt:"2025-05-28",
-stageHistory:[
-{stage:"①",date:"2025-05-28",note:"初回架電",by:"小島"},
-{stage:"②",date:"2025-05-29",note:"担当者接触",by:"小島"},
-{stage:"③",date:"2025-06-02",note:"アポ取得",by:"小島"},
-{stage:"④",date:"2025-06-06",note:"担当者問診",by:"小島"},
-{stage:"⑤",date:"2025-06-11",note:"上層部（専務）問診",by:"小島"},
-{stage:"⑥",date:"2025-06-13",note:"プレゼン実施。クロージング進行中",by:"小島"}],
-
-nextAction:{date:"2025-06-18",time:"14:00",content:"プレゼン後フォロー・クロージング",reminder:false},
-notes:[
-{id:1,date:"2025-06-13",content:"プレゼン反応良好。予算確認中。来週回答予定。",by:"小島"}],
-
-raScore:{teleapo:14,oi:13,ff:12,pc:11,closing:7,follow:9,attitude:9,process:8}
-},
-{
-id:4,company:"岐阜テック株式会社",contact:"加藤 誠",title:"経営企画部長",
-email:"kato@gifutech.co.jp",phone:"058-444-5555",owner:"まゆな",
-industry:"IT・システム",employees:55,prefecture:"岐阜",
-stage:"①",createdAt:"2025-06-10",
-stageHistory:[
-{stage:"①",date:"2025-06-10",note:"新規リストから架電開始",by:"まゆな"}],
-
-nextAction:{date:"2025-06-19",time:"15:30",content:"テレアポ再架電",reminder:false},
-notes:[],
-raScore:{teleapo:5,oi:0,ff:0,pc:0,closing:0,follow:3,attitude:8,process:6}
-},
-{
-id:5,company:"三重フーズ株式会社",contact:"中村 直樹",title:"代表取締役社長",
-email:"nakamura@mie-foods.co.jp",phone:"059-555-6666",owner:"ななみ",
-industry:"食品製造",employees:320,prefecture:"三重",
-stage:"⑦",createdAt:"2025-05-20",
-stageHistory:[
-{stage:"①",date:"2025-05-20",note:"初回架電",by:"ななみ"},
-{stage:"②",date:"2025-05-21",note:"担当者接触",by:"ななみ"},
-{stage:"③",date:"2025-05-24",note:"アポ取得",by:"ななみ"},
-{stage:"④",date:"2025-05-29",note:"担当者問診",by:"ななみ"},
-{stage:"⑤",date:"2025-06-04",note:"上層部（中村社長）問診",by:"ななみ"},
-{stage:"⑥",date:"2025-06-10",note:"プレゼン・クロージング実施",by:"ななみ"},
-{stage:"⑦",date:"2025-06-14",note:"成約確定！契約書送付済み",by:"ななみ"}],
-
-nextAction:{date:"2025-06-16",time:"16:00",content:"成約確認・契約書受領",reminder:true},
-notes:[
-{id:1,date:"2025-06-14",content:"BB診断 + サポートプランで成約。6月スタート。担当は小島と連携。",by:"ななみ"}],
-
-raScore:{teleapo:14,oi:14,ff:13,pc:13,closing:9,follow:9,attitude:10,process:9}
-},
-{
-id:6,company:"愛知電機工業株式会社",contact:"伊藤 博志",title:"総務部長",
-email:"ito@aichi-denki.co.jp",phone:"052-666-7777",owner:"吉村",
-industry:"電気機器",employees:180,prefecture:"愛知",
-stage:"③",createdAt:"2025-06-07",
-stageHistory:[
-{stage:"①",date:"2025-06-07",note:"初回架電",by:"吉村"},
-{stage:"②",date:"2025-06-09",note:"伊藤部長と接触",by:"吉村"},
-{stage:"③",date:"2025-06-12",note:"6/18アポ取得",by:"吉村"}],
-
-nextAction:{date:"2025-06-18",time:"13:00",content:"アポ訪問・OI準備",reminder:false},
-notes:[
-{id:1,date:"2025-06-12",content:"採用は毎年5名程度。Indeedのみ利用。コスト削減に関心。",by:"吉村"}],
-
-raScore:{teleapo:11,oi:0,ff:0,pc:0,closing:0,follow:6,attitude:9,process:7}
-},
-{
-id:7,company:"岡崎自動車部品工業",contact:"渡辺 浩二",title:"人事課長",
-email:"watanabe@okazaki-jidosha.co.jp",phone:"0564-11-2222",owner:"大原",
-industry:"自動車部品",employees:95,prefecture:"愛知",
-stage:"②",createdAt:"2025-06-11",
-stageHistory:[
-{stage:"①",date:"2025-06-11",note:"初回架電",by:"大原"},
-{stage:"②",date:"2025-06-13",note:"渡辺課長と接触。折り返し対応",by:"大原"}],
-
-nextAction:{date:"2025-06-17",time:"10:30",content:"アポ取得に向けた再コール",reminder:false},
-notes:[],
-raScore:{teleapo:7,oi:0,ff:0,pc:0,closing:0,follow:4,attitude:8,process:6}
-},
-{
-id:8,company:"四日市化学株式会社",contact:"松本 義雄",title:"取締役",
-email:"matsumoto@yokkaichi-chem.co.jp",phone:"059-777-8888",owner:"小島",
-industry:"化学",employees:440,prefecture:"三重",
-stage:"⑤",createdAt:"2025-06-01",
-stageHistory:[
-{stage:"①",date:"2025-06-01",note:"初回架電",by:"小島"},
-{stage:"②",date:"2025-06-02",note:"担当者接触",by:"小島"},
-{stage:"③",date:"2025-06-05",note:"アポ取得",by:"小島"},
-{stage:"④",date:"2025-06-10",note:"担当者問診",by:"小島"},
-{stage:"⑤",date:"2025-06-13",note:"上層部（松本取締役）問診実施",by:"小島"}],
-
-nextAction:{date:"2025-06-21",time:"15:00",content:"PCへの移行確認",reminder:false},
-notes:[
-{id:1,date:"2025-06-13",content:"大手企業。採用ブランディングに課題感あり。組織診断を検討。",by:"小島"}],
-
-raScore:{teleapo:13,oi:12,ff:11,pc:0,closing:0,follow:8,attitude:9,process:8}
-}];
-
-
-
-const allActions=[
-{id:1,ownerName:"吉村",company:"株式会社丸山製作所",contact:"山田部長",action:"上層部問診 → PCへ進める",stage:"⑤",time:"10:00",urgent:true},
-{id:2,ownerName:"大原",company:"東海精密工業",contact:"鈴木社長",action:"担当者問診 → 上層部へ声かけ",stage:"④",time:"11:30",urgent:true},
-{id:3,ownerName:"小島",company:"名古屋物産株式会社",contact:"田中人事",action:"プレゼン後フォロー・クロージング",stage:"⑥",time:"14:00",urgent:false},
-{id:4,ownerName:"まゆな",company:"岐阜テック",contact:"加藤部長",action:"テレアポ再架電",stage:"①",time:"15:30",urgent:false},
-{id:5,ownerName:"ななみ",company:"三重フーズ",contact:"中村社長",action:"成約確認・契約書送付",stage:"⑦",time:"16:00",urgent:true}];
-
-
-const members=[
-{name:"吉村",raScore:84,calls:38,contacts:17,appts:7},
-{name:"大原",raScore:71,calls:31,contacts:11,appts:5},
-{name:"小島",raScore:63,calls:29,contacts:9,appts:4},
-{name:"まゆな",raScore:77,calls:26,contacts:12,appts:4},
-{name:"ななみ",raScore:68,calls:18,contacts:9,appts:3}];
 
 
 const navItems=[
@@ -1559,7 +1766,7 @@ c.nextAction?`${c.nextAction.date} ${c.nextAction.content}`:"—"
 
 
 
-function CustomerDetailPanel({customer,onClose,onUpdate,onLostRequest,teleapoLists,onCreateTodo,user}){
+function CustomerDetailPanel({customer,onClose,onUpdate,onLostRequest,teleapoLists,onCreateTodo,user,onSyncGcal}){
 const[tab,setTab]=useState(0);
 const[editing,setEditing]=useState(false);
 const[form,setForm]=useState({...customer});
@@ -1624,6 +1831,8 @@ onUpdate({
 nextAction:actionForm,
 actionLogs:[...(customer.actionLogs||[]),logEntry]
 });
+
+if(onSyncGcal)onSyncGcal(customer,actionForm);
 }
 function changeStage(newStage){
 const today=new Date().toISOString().slice(0,10);
@@ -2498,7 +2707,7 @@ React.createElement("button",{onClick:()=>onApprove(r.id),style:{flex:1,backgrou
 
 
 
-function LostBoxPage({lostList,requests,isAdmin,onApprove,onReject,onUpdate,onSendToRecontact,customers=[]}){
+function LostBoxPage({lostList,requests,isAdmin,onApprove,onReject,onUpdate,onSendToRecontact,customers=[],recontactSentIds=new Set()}){
 const{isMobile,isTablet}=useResponsive();
 const[subTab,setSubTab]=useState(isAdmin?"approval":"lost");
 const[filterCat,setFilterCat]=useState("all");
@@ -2507,6 +2716,8 @@ const[editingId,setEditingId]=useState(null);
 const[editForm,setEditForm]=useState({});
 const[adminNote,setAdminNote]=useState("");
 const[addingNoteId,setAddingNoteId]=useState(null);
+
+const[sendingIds,setSendingIds]=useState(new Set());
 
 const[rangePreset,setRangePreset]=useState("3m");
 const[customFrom,setCustomFrom]=useState("");
@@ -2623,7 +2834,7 @@ return d.toISOString().slice(0,7);
 const monthlyData=trendMonths12.map((m)=>{
 
 const lostCount=lostList.filter((l)=>(l.lastStageDate||l.lostDate||"").startsWith(m)).length;
-const recontactCount=lostList.filter((l)=>(l.lastStageDate||l.lostDate||"").startsWith(m)&&l.recontactSent).length;
+const recontactCount=lostList.filter((l)=>(l.lastStageDate||l.lostDate||"").startsWith(m)&&recontactSentIds.has(l.id)).length;
 
 const pipelineCount=customers.filter((c)=>{
 const sh=c.stageHistory||[];
@@ -2875,13 +3086,13 @@ style:{background:"none",border:"1px solid #e8edf5",borderRadius:5,padding:"2px 
 React.createElement(MessageSquare,{size:9}),"\u8FFD\u8A18"
 ),
 
-isAdmin&&!r.recontactSent&&r.recontactDate&&
-React.createElement("button",{onClick:()=>onSendToRecontact&&onSendToRecontact(r),
+isAdmin&&!recontactSentIds.has(r.id)&&!sendingIds.has(r.id)&&r.recontactDate&&
+React.createElement("button",{onClick:()=>{setSendingIds((s)=>{const n=new Set(s);n.add(r.id);return n;});onSendToRecontact&&onSendToRecontact(r);},
 style:{background:"#22c55e22",border:"1px solid #22c55e55",borderRadius:5,padding:"2px 10px",color:"#22c55e",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",gap:3,fontWeight:600,fontFamily:"'Noto Sans JP',sans-serif"}},
 React.createElement(RotateCcw,{size:9}),"\u8FFD\u5BA2\u30EA\u30B9\u30C8\u3078"
 ),
 
-r.recontactSent&&
+(recontactSentIds.has(r.id)||sendingIds.has(r.id))&&
 React.createElement("span",{style:{fontSize:10,color:"#22c55e",padding:"2px 8px",background:"#22c55e11",borderRadius:5}},React.createElement(RotateCcw,{size:10,color:"#22c55e"}),"\u8FFD\u5BA2\u4E2D")
 
 )
@@ -3853,7 +4064,7 @@ fontSize:13,fontWeight:700,padding:"10px",cursor:"pointer",fontFamily:"'Noto San
 
 
 
-function CustomerManagementPage({user,customers,setCustomers,onLostRequest,teleapoLists,setTeleapoLists,openNewModal,onNewModalOpened,onCreateTodo,clerkTodos=[]}){
+function CustomerManagementPage({user,customers,setCustomers,onLostRequest,teleapoLists,setTeleapoLists,openNewModal,onNewModalOpened,onCreateTodo,clerkTodos=[],salesMembers=[],onSyncGcal}){
 const{isMobile,isTablet}=useResponsive();
 const isAdmin=user.role==="admin";
 const[viewMode,setViewMode]=useState("kanban");
@@ -4024,7 +4235,8 @@ onUpdate:updateCustomer,
 onLostRequest:handleLostRequest,
 teleapoLists:teleapoLists||[],
 onCreateTodo:onCreateTodo,
-user:user}
+user:user,
+onSyncGcal:onSyncGcal}
 ),
 
 
@@ -4089,7 +4301,7 @@ React.createElement("div",{style:{flex:1}},
 React.createElement("div",{style:{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:4}},"\u62C5\u5F53\u8005"),
 React.createElement("select",{value:newForm.owner,onChange:(e)=>setNewForm((p)=>({...p,owner:e.target.value})),
 style:{width:"100%",fontSize:13,color:"#0f172a",border:"1px solid #e8edf5",borderRadius:8,padding:"8px 12px",fontFamily:"'Noto Sans JP',sans-serif",outline:"none",background:"#fff"}},
-DEV_USERS.map((u)=>React.createElement("option",{key:u.name,value:u.name},u.name))
+salesMembers.map((u)=>React.createElement("option",{key:u.name,value:u.name},u.name))
 )
 ),
 React.createElement("div",{style:{flex:1}},
@@ -4132,17 +4344,6 @@ onClose:()=>setLostTarget(null)}
 
 
 
-const DEV_USERS=[
-{name:"岡（管理者）",role:"admin",label:"管理者"},
-{name:"吉村",role:"member",label:"メンバー"},
-{name:"大原",role:"member",label:"メンバー"},
-{name:"小島",role:"member",label:"メンバー"},
-{name:"まゆな",role:"member",label:"メンバー"},
-{name:"ななみ",role:"member",label:"メンバー"},
-{name:"事務（佐藤）",role:"clerk",label:"事務員"}];
-
-
-
 
 
 
@@ -4152,9 +4353,6 @@ const OAUTH_CLIENT_ID="620212859862-7b25gilu0v1skqu6fpo8ovqb50s01nal.apps.google
 function LoginScreen({onLogin}){
 const[error,setError]=useState("");
 const[loading,setLoading]=useState(false);
-const[gsiReady,setGsiReady]=useState(false);
-const[devMode,setDevMode]=useState(false);
-const[selected,setSelected]=useState(0);
 const btnRef=useRef(null);
 const nonceRef=useRef(null);
 
@@ -4170,27 +4368,25 @@ return{rawNonce,hashedNonce};
 
 
 useEffect(()=>{
-
 if(!document.querySelector('script[src*="accounts.google.com/gsi/client"]')){
 const script=document.createElement('script');
 script.src='https://accounts.google.com/gsi/client';
 script.async=true;
 script.defer=true;
 script.onload=()=>initGSI();
-script.onerror=()=>{console.warn("GSI script load failed");setDevMode(true);};
+script.onerror=()=>{console.warn("GSI script load failed");setError("Google認証の読み込みに失敗しました。ページを再読み込みしてください。");};
 document.head.appendChild(script);
 }else{
 initGSI();
 }function
 
 initGSI(){return _initGSI.apply(this,arguments);}function _initGSI(){_initGSI=_asyncToGenerator(function*(){
-
 let retries=0;
 while(!window.google?.accounts?.id&&retries<10){
 yield new Promise((r)=>setTimeout(r,500));
 retries++;
 }
-if(!window.google?.accounts?.id){setDevMode(true);return;}
+if(!window.google?.accounts?.id){setError("Google認証の初期化に失敗しました。ページを再読み込みしてください。");return;}
 
 const{rawNonce,hashedNonce}=yield generateNonce();
 nonceRef.current=rawNonce;
@@ -4207,20 +4403,18 @@ window.google.accounts.id.renderButton(btnRef.current,{
 theme:'outline',size:'large',width:320,text:'signin_with',locale:'ja'
 });
 }
-setGsiReady(true);
 window.google.accounts.id.prompt();
 });return _initGSI.apply(this,arguments);}
 },[]);function
 
 
-handleCredentialResponse(_x13){return _handleCredentialResponse.apply(this,arguments);}function _handleCredentialResponse(){_handleCredentialResponse=_asyncToGenerator(function*(response){
+handleCredentialResponse(_x20){return _handleCredentialResponse.apply(this,arguments);}function _handleCredentialResponse(){_handleCredentialResponse=_asyncToGenerator(function*(response){
 setLoading(true);
 setError('');
 try{
 const idToken=response.credential;
 const sb=yield getSupabase();
 if(!sb){setError('DB接続エラー');setLoading(false);return;}
-
 
 const authPayload={provider:'google',token:idToken};
 if(nonceRef.current)authPayload.nonce=nonceRef.current;
@@ -4229,11 +4423,9 @@ if(authRes.error){setError('認証エラー: '+authRes.error.message);setLoading
 
 const email=authRes.data.user.email;
 
-
 const{data:member}=yield sb.from('members').
 select('*').eq('email',email).eq('is_active',true).maybeSingle();
 if(!member){setError('未登録のメールアドレスです: '+email);setLoading(false);return;}
-
 
 if(!member.auth_id){
 yield sb.from('members').update({auth_id:authRes.data.user.id}).eq('id',member.id);
@@ -4253,13 +4445,11 @@ setError('通信エラー: '+err.message);
 setLoading(false);
 });return _handleCredentialResponse.apply(this,arguments);}
 
-
 useEffect(()=>{window._handleGoogleCredentialCRM=handleCredentialResponse;},[]);
 
 return(
 React.createElement("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)",fontFamily:"'Noto Sans JP',sans-serif"}},
 React.createElement("div",{style:{background:"rgba(255,255,255,0.97)",borderRadius:20,padding:"48px 40px",maxWidth:440,width:"90%",textAlign:"center",boxShadow:"0 25px 80px rgba(0,0,0,0.4)"}},
-
 React.createElement("div",{style:{width:80,height:80,margin:"0 auto 20px",display:"flex",alignItems:"center",justifyContent:"center"}},
 React.createElement(GakusapoLogo,{size:64})
 ),
@@ -4270,9 +4460,6 @@ React.createElement("p",{style:{color:"#64748b",fontSize:14,marginBottom:32}},"G
 
 ),
 
-
-!devMode&&
-React.createElement(React.Fragment,null,
 React.createElement("div",{style:{display:"flex",justifyContent:"center",marginBottom:16,minHeight:44}},
 React.createElement("div",{ref:btnRef})
 ),
@@ -4289,54 +4476,7 @@ React.createElement("strong",null,"\u26A0 \u30A8\u30E9\u30FC:")," ",error
 React.createElement("p",{style:{color:"#94a3b8",fontSize:11,marginTop:28,lineHeight:"1.5"}},"\u30E1\u30F3\u30D0\u30FC\u30B7\u30FC\u30C8\u306B\u767B\u9332\u3055\u308C\u305FGoogle\u30A2\u30AB\u30A6\u30F3\u30C8\u3067\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044",
 React.createElement("br",null),"\u203B \u767B\u9332\u304C\u306A\u3044\u5834\u5408\u306F\u7BA1\u7406\u8005\u306B\u304A\u554F\u3044\u5408\u308F\u305B\u304F\u3060\u3055\u3044"
 
-),
-React.createElement("div",{style:{borderTop:"1px solid #e2e8f0",marginTop:24,paddingTop:16}},
-React.createElement("button",{onClick:()=>setDevMode(true),style:{background:"none",border:"none",color:"#94a3b8",fontSize:11,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u958B\u767A\u30E2\u30FC\u30C9\u3067\u5165\u308B \u2192"
-
 )
-)
-),
-
-
-
-devMode&&
-React.createElement(React.Fragment,null,
-React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",marginBottom:24}},
-React.createElement("div",{style:{background:"#f59e0b22",border:"1px solid #f59e0b44",borderRadius:20,padding:"4px 14px",fontSize:11,color:"#f59e0b",fontWeight:600,letterSpacing:"0.06em"}},"\u958B\u767A\u30E2\u30FC\u30C9\uFF08\u8A8D\u8A3C\u30B9\u30AD\u30C3\u30D7\u4E2D\uFF09"
-
-)
-),
-React.createElement("div",{style:{fontSize:12,color:"#64748b",marginBottom:12,fontWeight:600,textAlign:"left"}},"\u30ED\u30B0\u30A4\u30F3\u30E6\u30FC\u30B6\u30FC\u3092\u9078\u629E"),
-React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8,marginBottom:24}},
-DEV_USERS.map((u,i)=>
-React.createElement("button",{key:i,onClick:()=>setSelected(i),style:{
-display:"flex",alignItems:"center",gap:12,padding:"12px 16px",
-borderRadius:10,border:`2px solid ${selected===i?"#6c5ce7":"#e8edf5"}`,
-background:selected===i?"#ede9fe":"#fff",cursor:"pointer",
-fontFamily:"'Noto Sans JP',sans-serif",transition:"all 0.15s",width:"100%"
-}},
-React.createElement("div",{style:{width:32,height:32,borderRadius:"50%",background:u.role==="admin"?"#DC2626":u.role==="clerk"?"#22c55e":"#1e3a5f",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#fff",flexShrink:0}},
-u.name.slice(0,2)
-),
-React.createElement("div",{style:{flex:1,textAlign:"left"}},
-React.createElement("div",{style:{fontSize:13,fontWeight:600,color:"#0f172a"}},u.name),
-React.createElement("div",{style:{fontSize:10,color:u.role==="admin"?"#DC2626":u.role==="clerk"?"#22c55e":"#60a5fa",marginTop:1}},u.label)
-),
-selected===i&&React.createElement(Check,{size:14,color:"#ef4444"})
-)
-)
-),
-React.createElement("button",{onClick:()=>onLogin({...DEV_USERS[selected],email:`${DEV_USERS[selected].name}@dev.local`,picture:null}),
-style:{width:"100%",background:"#DC2626",border:"none",borderRadius:10,color:"#fff",fontSize:14,fontWeight:700,padding:"14px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u3053\u306E\u30E6\u30FC\u30B6\u30FC\u3067\u30ED\u30B0\u30A4\u30F3 \u2192"
-
-),
-React.createElement("div",{style:{borderTop:"1px solid #e2e8f0",marginTop:16,paddingTop:12}},
-React.createElement("button",{onClick:()=>setDevMode(false),style:{background:"none",border:"none",color:"#94a3b8",fontSize:11,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u2190 Google\u8A8D\u8A3C\u306B\u623B\u308B"
-
-)
-)
-)
-
 )
 ));
 
@@ -4348,7 +4488,7 @@ React.createElement("button",{onClick:()=>setDevMode(false),style:{background:"n
 
 
 
-function DashboardHome({user,actions,customers=[],teleapoLists=[],isMobile=false,isTablet=false}){
+function DashboardHome({user,actions,customers=[],teleapoLists=[],salesMembers=[],isMobile=false,isTablet=false}){
 const isAdmin=user.role==="admin";
 
 const[dashPeriod,setDashPeriod]=React.useState("week");
@@ -4735,8 +4875,17 @@ React.createElement("div",{style:{fontSize:11,color:"#64748b",letterSpacing:"0.0
 React.createElement("div",{style:{fontSize:15,fontWeight:600,color:"#0f172a"}},"\u55B6\u696D\u30DE\u30F3\u5225\u30B9\u30B3\u30A2")
 ),
 React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:14}},
-members.map((m,i)=>
-React.createElement("div",{key:i,style:{display:"flex",alignItems:"center",gap:12}},
+salesMembers.map((m,i)=>{
+const myLists=teleapoLists.filter((t)=>t.owner===m.name);
+const myCusts=customers.filter((c)=>c.owner===m.name);
+const calls=myLists.reduce((s,t)=>s+(t.callCount||0),0);
+const contacts=myLists.filter((t)=>["connected","materials","appointed"].includes(t.reachedStage)).length;
+const appts=myCusts.length;
+const scored=myCusts.filter((c)=>c.raScore&&Object.keys(c.raScore).length>0);
+
+const raScore=scored.length>0?Math.round(scored.reduce((s,c)=>{const vals=Object.values(c.raScore);return s+vals.reduce((a,b)=>a+b,0);},0)/scored.length):0;
+return(
+React.createElement("div",{key:m.id||i,style:{display:"flex",alignItems:"center",gap:12}},
 React.createElement("div",{style:{width:34,height:34,borderRadius:"50%",background:i===0?"#6c5ce7":"#f0f4ff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:i===0?"#fff":"#6c5ce7",flexShrink:0,border:`2px solid ${i===0?"#6c5ce7":"#e0e7ff"}`}},
 m.name.slice(0,2)
 ),
@@ -4744,15 +4893,16 @@ React.createElement("div",{style:{flex:1}},
 React.createElement("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:5}},
 React.createElement("span",{style:{fontSize:12,color:"#64748b",fontWeight:500}},m.name),
 React.createElement("div",{style:{display:"flex",gap:10}},
-React.createElement("span",{style:{fontSize:11,color:"#64748b",fontFamily:"'DM Mono',monospace"}},m.calls),
-React.createElement("span",{style:{fontSize:11,color:"#6c5ce7",fontFamily:"'DM Mono',monospace"}},m.contacts),
-React.createElement("span",{style:{fontSize:11,color:"#ef4444",fontFamily:"'DM Mono',monospace"}},m.appts)
+React.createElement("span",{style:{fontSize:11,color:"#64748b",fontFamily:"'DM Mono',monospace"}},calls),
+React.createElement("span",{style:{fontSize:11,color:"#6c5ce7",fontFamily:"'DM Mono',monospace"}},contacts),
+React.createElement("span",{style:{fontSize:11,color:"#ef4444",fontFamily:"'DM Mono',monospace"}},appts)
 )
 ),
-React.createElement(RaScoreBar,{score:m.raScore})
+React.createElement(RaScoreBar,{score:raScore})
 )
-)
-)
+));
+
+})
 ),
 React.createElement("div",{style:{marginTop:16,paddingTop:12,borderTop:"1px solid #e8edf5",display:"flex",gap:12,fontSize:10,color:"#64748b"}},
 React.createElement("span",{style:{display:"flex",alignItems:"center",gap:6}},
@@ -4768,6 +4918,364 @@ React.createElement("span",{style:{color:"#ef4444",fontWeight:600}},"~64")
 )
 )
 
+)
+));
+
+}
+
+
+
+
+
+
+
+
+
+
+function parseCSVRFC(text){
+const rows=[];
+let row=[];
+let field="";
+let inQuote=false;
+for(let i=0;i<text.length;i++){
+const ch=text[i];
+if(inQuote){
+if(ch==='"'){
+if(text[i+1]==='"'){field+='"';i++;}else
+inQuote=false;
+}else{field+=ch;}
+}else{
+if(ch==='"'){inQuote=true;}else
+if(ch===','){row.push(field.trim());field="";}else
+if(ch==='\n'||ch==='\r'&&text[i+1]==='\n'){
+if(ch==='\r')i++;
+row.push(field.trim());field="";
+if(row.some((c)=>c))rows.push(row);
+row=[];
+}else{field+=ch;}
+}
+}
+row.push(field.trim());
+if(row.some((c)=>c))rows.push(row);
+return rows;
+}
+
+
+const CSV_COL_DEFS=[
+{key:"company",label:"会社名",patterns:[/会社|社名|company|法人/i],required:true},
+{key:"contact",label:"担当者名",patterns:[/担当者?名?|contact|氏名|名前/i]},
+{key:"title",label:"役職",patterns:[/役職|title|肩書/i]},
+{key:"phone",label:"電話番号",patterns:[/電話|phone|tel|TEL/i]},
+{key:"industry",label:"業種",patterns:[/業種|industry/i]},
+{key:"prefecture",label:"都道府県",patterns:[/都道府県|県|prefecture|地域|エリア/i]},
+{key:"address",label:"住所",patterns:[/住所|address|所在地/i]},
+{key:"url",label:"URL",patterns:[/url|hp|ホームページ|web/i]},
+{key:"employees",label:"従業員数",patterns:[/従業員|社員|employees|人数/i]},
+{key:"revenue",label:"売上",patterns:[/売上|revenue|年商/i]},
+{key:"owner",label:"担当営業",patterns:[/担当営業|担当者|owner|営業/i]},
+{key:"source",label:"媒体",patterns:[/媒体|source|リスト元|出典/i]}];
+
+
+function autoMapColumns(headers){
+const map={};
+CSV_COL_DEFS.forEach((def)=>{
+const idx=headers.findIndex((h)=>def.patterns.some((p)=>p.test(h)));
+if(idx>=0)map[def.key]=idx;
+});
+return map;
+}
+
+function CSVImportModal({onClose,onImport,sourceList,userName,existingLists,salesMembers=[]}){
+const[step,setStep]=useState("upload");
+const[rawRows,setRawRows]=useState([]);
+const[headers,setHeaders]=useState([]);
+const[colMap,setColMap]=useState({});
+const[listBadge,setListBadge]=useState("");
+const[defaultOwner,setDefaultOwner]=useState(userName);
+const[defaultPrefecture,setDefaultPrefecture]=useState("");
+const[encoding,setEncoding]=useState("auto");
+const[error,setError]=useState("");
+const[fileName,setFileName]=useState("");
+const fileRef=useRef(null);
+
+function readFile(file,enc){
+setError("");
+setFileName(file.name);
+const reader=new FileReader();
+reader.onload=(ev)=>{
+try{
+const buf=ev.target.result;
+let text;
+if(enc==="auto"){
+
+const utf8=new TextDecoder("utf-8").decode(buf);
+text=/\ufffd/.test(utf8)?new TextDecoder("shift_jis").decode(buf):utf8;
+}else{
+text=new TextDecoder(enc).decode(buf);
+}
+
+if(text.charCodeAt(0)===0xFEFF)text=text.slice(1);
+const allRows=parseCSVRFC(text);
+if(allRows.length<2){setError("データ行が見つかりません");return;}
+const h=allRows[0];
+const data=allRows.slice(1);
+const map=autoMapColumns(h);
+if(!("company"in map)){
+setError("「会社名」列が見つかりません。ヘッダー行に「会社」「社名」等の文字を含めてください。");
+return;
+}
+setHeaders(h);
+setRawRows(data);
+setColMap(map);
+setStep("preview");
+}catch(e){
+setError("ファイルの読み取りに失敗しました: "+e.message);
+}
+};
+reader.readAsArrayBuffer(file);
+}
+
+function handleFile(e){
+const file=e.target.files?.[0];
+if(!file)return;
+readFile(file,encoding);
+e.target.value="";
+}
+
+function handleDrop(e){
+e.preventDefault();
+const file=e.dataTransfer?.files?.[0];
+if(file)readFile(file,encoding);
+}
+
+
+const previewItems=rawRows.map((cols,i)=>{
+const get=(key)=>key in colMap?cols[colMap[key]]||"":"";
+return{_idx:i,company:get("company"),contact:get("contact"),title:get("title"),
+phone:get("phone"),industry:get("industry"),prefecture:get("prefecture")||defaultPrefecture,
+address:get("address"),url:get("url"),employees:get("employees"),revenue:get("revenue"),
+owner:get("owner")||defaultOwner,source:get("source")};
+}).filter((r)=>r.company);
+
+
+const dupCount=previewItems.filter((r)=>
+existingLists.some((ex)=>ex.company===r.company&&ex.phone===r.phone&&r.phone)
+).length;
+
+function handleImport(){
+const today=new Date().toISOString().slice(0,10);
+const items=previewItems.map((r,i)=>{
+const srcMatch=sourceList.find((s)=>s.key===r.source||s.label===r.source);
+return{
+id:Date.now()+i,
+...r,source:srcMatch?srcMatch.key:r.source||"",
+listBadge:listBadge||"",
+callTags:[],callCount:0,callLogs:[],
+reachedStage:"new",lastCallResult:"",
+comments:[],flagClaim:false,flagBanned:false,adminNotes:[],
+createdAt:today,updatedAt:today
+};
+});
+onImport(items);
+onClose();
+}
+
+const mappedCount=Object.keys(colMap).length;
+const totalCols=CSV_COL_DEFS.length;
+
+
+const modalBg={position:"fixed",top:0,left:0,right:0,bottom:0,background:"#00000066",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Noto Sans JP',sans-serif"};
+const modalBox={background:"#fff",borderRadius:16,maxWidth:800,width:"95%",maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 25px 60px #00000033"};
+
+return(
+React.createElement("div",{style:modalBg,onClick:onClose},
+React.createElement("div",{style:modalBox,onClick:(e)=>e.stopPropagation()},
+
+React.createElement("div",{style:{padding:"20px 24px",borderBottom:"1px solid #e8edf5",display:"flex",alignItems:"center",justifyContent:"space-between"}},
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:16,fontWeight:700,color:"#0f172a"}},"CSV\u30A4\u30F3\u30DD\u30FC\u30C8"),
+React.createElement("div",{style:{fontSize:11,color:"#94a3b8",marginTop:2}},
+step==="upload"?"CSVファイルを選択してください":`${previewItems.length}件のデータをプレビュー中`
+)
+),
+React.createElement("button",{onClick:onClose,style:{background:"none",border:"none",fontSize:20,color:"#94a3b8",cursor:"pointer",padding:4}},"\u2715")
+),
+
+
+React.createElement("div",{style:{flex:1,overflow:"auto",padding:"20px 24px"}},
+
+step==="upload"&&
+React.createElement(React.Fragment,null,
+
+React.createElement("div",{onDrop:handleDrop,onDragOver:(e)=>e.preventDefault(),
+onClick:()=>fileRef.current?.click(),
+style:{border:"2px dashed #c4b5fd",borderRadius:12,padding:"40px 20px",textAlign:"center",
+cursor:"pointer",background:"#faf5ff",marginBottom:20,transition:"border-color 0.2s"}},
+React.createElement(Upload,{size:32,color:"#6c5ce7",style:{marginBottom:12}}),
+React.createElement("div",{style:{fontSize:14,color:"#6c5ce7",fontWeight:600,marginBottom:4}},"\u30D5\u30A1\u30A4\u30EB\u3092\u30C9\u30ED\u30C3\u30D7\u3001\u307E\u305F\u306F\u30AF\u30EA\u30C3\u30AF\u3057\u3066\u9078\u629E"
+
+),
+React.createElement("div",{style:{fontSize:11,color:"#94a3b8"}},"CSV\u5F62\u5F0F\uFF08UTF-8\u30FBShift_JIS\u81EA\u52D5\u691C\u51FA\uFF09"),
+fileName&&React.createElement("div",{style:{fontSize:12,color:"#22c55e",marginTop:8,fontWeight:600}},"\u9078\u629E\u4E2D: ",fileName)
+),
+React.createElement("input",{ref:fileRef,type:"file",accept:".csv,.txt",style:{display:"none"},onChange:handleFile}),
+
+
+React.createElement("div",{style:{display:"flex",gap:16,marginBottom:16,flexWrap:"wrap"}},
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:4}},"\u6587\u5B57\u30B3\u30FC\u30C9"),
+React.createElement("div",{style:{display:"flex",gap:4}},
+[["auto","自動検出"],["utf-8","UTF-8"],["shift_jis","Shift_JIS"]].map(([v,l])=>
+React.createElement("button",{key:v,onClick:()=>setEncoding(v),
+style:{padding:"4px 12px",borderRadius:6,border:`1px solid ${encoding===v?"#6c5ce7":"#e8edf5"}`,
+background:encoding===v?"#ede9fe":"#fff",color:encoding===v?"#6c5ce7":"#64748b",
+fontSize:11,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",fontWeight:encoding===v?600:400}},
+l
+)
+)
+)
+)
+),
+
+error&&
+React.createElement("div",{style:{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:12,color:"#dc2626",fontSize:13}},"\u26A0 ",
+error
+),
+
+
+
+React.createElement("div",{style:{background:"#f8faff",borderRadius:10,padding:16,marginTop:16}},
+React.createElement("div",{style:{fontSize:12,fontWeight:600,color:"#0f172a",marginBottom:8}},"\u81EA\u52D5\u8A8D\u8B58\u3055\u308C\u308B\u30D8\u30C3\u30C0\u30FC\u540D"),
+React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
+CSV_COL_DEFS.map((d)=>
+React.createElement("span",{key:d.key,style:{fontSize:10,padding:"3px 8px",borderRadius:4,
+background:d.required?"#fef3c7":"#f1f5f9",color:d.required?"#d97706":"#64748b",
+border:`1px solid ${d.required?"#fde68a":"#e2e8f0"}`}},
+d.label,d.required?" (必須)":""
+)
+)
+),
+React.createElement("div",{style:{fontSize:10,color:"#94a3b8",marginTop:8}},"\u203B \u30D8\u30C3\u30C0\u30FC\u884C\u306B\u4E0A\u8A18\u306E\u6587\u5B57\u304C\u542B\u307E\u308C\u3066\u3044\u308C\u3070\u81EA\u52D5\u30DE\u30C3\u30D4\u30F3\u30B0\u3055\u308C\u307E\u3059"
+
+)
+)
+),
+
+
+step==="preview"&&
+React.createElement(React.Fragment,null,
+
+React.createElement("div",{style:{display:"flex",gap:16,marginBottom:16,flexWrap:"wrap",alignItems:"flex-end"}},
+React.createElement("div",{style:{flex:1,minWidth:180}},
+React.createElement("div",{style:{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:4}},"\u30EA\u30B9\u30C8\u540D\uFF08\u30D0\u30C3\u30C1\u30BF\u30B0\uFF09"),
+React.createElement("input",{value:listBadge,onChange:(e)=>setListBadge(e.target.value),
+placeholder:"\u4F8B: 2026\u5E743\u6708_\u88FD\u9020\u696D\u30EA\u30B9\u30C8",
+style:{width:"100%",padding:"8px 12px",border:"1px solid #e8edf5",borderRadius:8,fontSize:13,outline:"none",fontFamily:"'Noto Sans JP',sans-serif"}})
+),
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:4}},"\u30C7\u30D5\u30A9\u30EB\u30C8\u62C5\u5F53\u8005"),
+React.createElement("select",{value:defaultOwner,onChange:(e)=>setDefaultOwner(e.target.value),
+style:{padding:"8px 12px",border:"1px solid #e8edf5",borderRadius:8,fontSize:13,outline:"none",fontFamily:"'Noto Sans JP',sans-serif"}},
+salesMembers.map((m)=>React.createElement("option",{key:m.name,value:m.name},m.name))
+)
+),
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:4}},"\u30C7\u30D5\u30A9\u30EB\u30C8\u90FD\u9053\u5E9C\u770C"),
+React.createElement("input",{value:defaultPrefecture,onChange:(e)=>setDefaultPrefecture(e.target.value),
+placeholder:"\u4F8B: \u9759\u5CA1\u770C",
+style:{padding:"8px 12px",border:"1px solid #e8edf5",borderRadius:8,fontSize:13,outline:"none",fontFamily:"'Noto Sans JP',sans-serif",width:120}})
+)
+),
+
+
+React.createElement("div",{style:{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}},
+CSV_COL_DEFS.map((d)=>{
+const mapped=d.key in colMap;
+return(
+React.createElement("span",{key:d.key,style:{fontSize:10,padding:"2px 8px",borderRadius:4,
+background:mapped?"#dcfce7":"#f1f5f9",color:mapped?"#22c55e":"#94a3b8",
+border:`1px solid ${mapped?"#86efac":"#e2e8f0"}`}},
+mapped?"✓":"—"," ",d.label,mapped?` → ${headers[colMap[d.key]]}`:""
+));
+
+})
+),
+
+
+React.createElement("div",{style:{display:"flex",gap:12,marginBottom:16}},
+React.createElement("div",{style:{padding:"8px 14px",background:"#eff6ff",borderRadius:8,fontSize:12,color:"#3b82f6",fontWeight:600}},"\u65B0\u898F: ",
+previewItems.length-dupCount,"\u4EF6"
+),
+dupCount>0&&
+React.createElement("div",{style:{padding:"8px 14px",background:"#fef3c7",borderRadius:8,fontSize:12,color:"#d97706",fontWeight:600}},"\u65E2\u5B58\u30DE\u30FC\u30B8: ",
+dupCount,"\u4EF6"
+),
+
+React.createElement("div",{style:{padding:"8px 14px",background:"#f1f5f9",borderRadius:8,fontSize:12,color:"#64748b"}},"\u30AB\u30E9\u30E0: ",
+mappedCount,"/",totalCols," \u30DE\u30C3\u30D4\u30F3\u30B0\u6E08"
+)
+),
+
+
+React.createElement("div",{style:{border:"1px solid #e8edf5",borderRadius:10,overflow:"auto",maxHeight:320}},
+React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:11}},
+React.createElement("thead",null,
+React.createElement("tr",{style:{background:"#f8faff",position:"sticky",top:0}},
+React.createElement("th",{style:{padding:"8px 10px",textAlign:"left",color:"#64748b",fontWeight:600,borderBottom:"1px solid #e8edf5"}},"#"),
+["会社名","担当者","役職","電話","業種","県","担当営業"].map((h)=>
+React.createElement("th",{key:h,style:{padding:"8px 10px",textAlign:"left",color:"#64748b",fontWeight:600,borderBottom:"1px solid #e8edf5",whiteSpace:"nowrap"}},h)
+)
+)
+),
+React.createElement("tbody",null,
+previewItems.slice(0,20).map((r,i)=>{
+const isDup=existingLists.some((ex)=>ex.company===r.company&&ex.phone===r.phone&&r.phone);
+return(
+React.createElement("tr",{key:i,style:{background:isDup?"#fffbeb":"#fff",borderBottom:"1px solid #f1f5f9"}},
+React.createElement("td",{style:{padding:"6px 10px",color:"#94a3b8"}},i+1),
+React.createElement("td",{style:{padding:"6px 10px",fontWeight:600,color:"#0f172a",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.company),
+React.createElement("td",{style:{padding:"6px 10px",color:"#334155"}},r.contact),
+React.createElement("td",{style:{padding:"6px 10px",color:"#64748b"}},r.title),
+React.createElement("td",{style:{padding:"6px 10px",color:"#64748b",fontFamily:"'DM Mono',monospace"}},r.phone),
+React.createElement("td",{style:{padding:"6px 10px",color:"#64748b"}},r.industry),
+React.createElement("td",{style:{padding:"6px 10px",color:"#64748b"}},r.prefecture),
+React.createElement("td",{style:{padding:"6px 10px",color:"#6c5ce7",fontWeight:500}},r.owner)
+));
+
+})
+)
+)
+),
+previewItems.length>20&&
+React.createElement("div",{style:{fontSize:11,color:"#94a3b8",textAlign:"center",marginTop:8}},"\u4ED6 ",
+previewItems.length-20," \u4EF6\uFF08\u30D7\u30EC\u30D3\u30E5\u30FC\u7701\u7565\uFF09"
+)
+
+)
+
+),
+
+
+React.createElement("div",{style:{padding:"16px 24px",borderTop:"1px solid #e8edf5",display:"flex",justifyContent:"flex-end",gap:8}},
+step==="preview"&&
+React.createElement("button",{onClick:()=>setStep("upload"),
+style:{padding:"8px 18px",borderRadius:8,border:"1px solid #e8edf5",background:"#fff",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u2190 \u30D5\u30A1\u30A4\u30EB\u9078\u629E\u306B\u623B\u308B"
+
+),
+
+React.createElement("button",{onClick:onClose,
+style:{padding:"8px 18px",borderRadius:8,border:"1px solid #e8edf5",background:"#fff",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u30AD\u30E3\u30F3\u30BB\u30EB"
+
+),
+step==="preview"&&
+React.createElement("button",{onClick:handleImport,disabled:previewItems.length===0,
+style:{padding:"8px 22px",borderRadius:8,border:"none",
+background:previewItems.length>0?"linear-gradient(135deg,#6c5ce7,#a78bfa)":"#e2e8f0",
+color:previewItems.length>0?"#fff":"#94a3b8",fontSize:13,fontWeight:600,cursor:previewItems.length>0?"pointer":"default",fontFamily:"'Noto Sans JP',sans-serif"}},
+previewItems.length,"\u4EF6\u3092\u30A4\u30F3\u30DD\u30FC\u30C8"
+)
+
+)
 )
 ));
 
@@ -4809,6 +5317,9 @@ const CALL_RESULTS=[
 {key:"person",label:"人改め",color:"#a855f7",bg:"#f3e8ff"}];
 
 
+
+const STAGE_DOT={"new":"#e2e8f0","called":"#f59e0b","connected":"#22c55e","materials":"#6c5ce7","appointed":"#3b82f6"};
+
 const SOURCE_LIST=[
 {key:"mynavi26",label:"マイナビ'26",color:"#e11d48",bg:"#ffe4e6"},
 {key:"rikunabi26",label:"リクナビ'26",color:"#1d4ed8",bg:"#dbeafe"},
@@ -4838,8 +5349,6 @@ const c=AUTO_COLORS[hash%AUTO_COLORS.length];
 return{key:sourceStr,label:sourceStr,color:c.color,bg:c.bg};
 }
 
-
-const INIT_TELEAPO_LISTS=[];
 
 const DAILY_CALL_TARGET=40;
 
@@ -4888,7 +5397,7 @@ default:return{from:"",to:""};
 }
 
 
-function TeleapoPage({user,customers,setCustomers,sourceList:srcListProp,setSourceList,lists,setLists,onCreateTodo}){
+function TeleapoPage({user,customers,setCustomers,sourceList:srcListProp,setSourceList,lists,setLists,onCreateTodo,salesMembers=[]}){
 const sourceList=srcListProp||SOURCE_LIST;
 
 const getSourceBadgeDyn=(str)=>{
@@ -4907,6 +5416,7 @@ const today=new Date().toISOString().slice(0,10);
 const[activeTab,setActiveTab]=useState("list");
 const[filterResult,setFilterResult]=useState("all");
 const[filterOwner,setFilterOwner]=useState("all");
+const[filterPrefecture,setFilterPrefecture]=useState("all");
 const[showBanned,setShowBanned]=useState(false);
 const[searchQ,setSearchQ]=useState("");
 const[expandedId,setExpandedId]=useState(null);
@@ -4921,7 +5431,8 @@ const[notification,setNotification]=useState(null);
 const[apoModal,setApoModal]=useState(null);
 const[apoForm,setApoForm]=useState({contact:"",title:"",email:"",apoDate:"",note:""});
 const[bbModal,setBbModal]=useState(null);
-const fileInputRef=useRef(null);
+
+const[csvImportOpen,setCsvImportOpen]=useState(false);
 
 
 const[commentModalId,setCommentModalId]=useState(null);
@@ -4945,61 +5456,21 @@ setPeriodFrom(r.from);setPeriodTo(r.to);
 }
 
 
-function parseCSV(text){
-const lines=text.split(/\r?\n/).filter((l)=>l.trim());
-if(lines.length<2)return[];
-const headers=lines[0].split(",").map((h)=>h.trim().replace(/^"|"$/g,""));
-const colMap={
-company:headers.findIndex((h)=>/会社|company/i.test(h)),
-contact:headers.findIndex((h)=>/担当|contact|氏名|名前/i.test(h)),
-title:headers.findIndex((h)=>/役職|title/i.test(h)),
-phone:headers.findIndex((h)=>/電話|phone|tel/i.test(h)),
-industry:headers.findIndex((h)=>/業種|industry/i.test(h)),
-prefecture:headers.findIndex((h)=>/都道府県|prefecture|地域/i.test(h)),
-owner:headers.findIndex((h)=>/担当者|owner|担当営業/i.test(h)),
-source:headers.findIndex((h)=>/媒体|source|リスト元|出典/i.test(h))
-};
-return lines.slice(1).map((line,i)=>{
-const cols=line.split(",").map((c)=>c.trim().replace(/^"|"$/g,""));
-const ownerVal=colMap.owner>=0?cols[colMap.owner]:"";
-const srcRaw=colMap.source>=0?cols[colMap.source]:"";
 
-const srcMatch=sourceList.find((s)=>s.key===srcRaw||s.label===srcRaw);
-return{
-id:Date.now()+i,
-company:colMap.company>=0?cols[colMap.company]:"",
-contact:colMap.contact>=0?cols[colMap.contact]:"",
-title:colMap.title>=0?cols[colMap.title]:"",
-phone:colMap.phone>=0?cols[colMap.phone]:"",
-industry:colMap.industry>=0?cols[colMap.industry]:"",
-prefecture:colMap.prefecture>=0?cols[colMap.prefecture]:"",
-url:"",revenue:"",address:"",employees:"",
-owner:ownerVal||user.name,
-source:srcMatch?srcMatch.key:srcRaw||"",
-callTags:[],callCount:0,callLogs:[],
-comments:[],flagClaim:false,flagBanned:false,adminNotes:[],
-createdAt:today,updatedAt:today
-};
-}).filter((r)=>r.company);
-}
-
-function handleCSVUpload(e){
-const file=e.target.files?.[0];
-if(!file)return;
-const reader=new FileReader();
-reader.onload=(ev)=>{
-const parsed=parseCSV(ev.target.result);
+function handleCSVImportFromModal(items){
+const today=new Date().toISOString().slice(0,10);
 let mergeCount=0,newCount=0;
 const newRows=[];
 const mergedUpdates=[];
 setLists((prev)=>{
 const next=[...prev];
-parsed.forEach((newRow)=>{
-const dupIdx=next.findIndex((r)=>r.company===newRow.company&&r.phone===newRow.phone);
+items.forEach((newRow)=>{
+const dupIdx=next.findIndex((r)=>r.company===newRow.company&&r.phone===newRow.phone&&newRow.phone);
 if(dupIdx>=0){
 mergeCount++;
 const mergedFields={contact:newRow.contact,title:newRow.title,
 industry:newRow.industry,prefecture:newRow.prefecture,
+address:newRow.address,url:newRow.url,employees:newRow.employees,revenue:newRow.revenue,
 owner:newRow.owner||next[dupIdx].owner};
 next[dupIdx]={...next[dupIdx],...mergedFields,updatedAt:today};
 mergedUpdates.push({id:next[dupIdx].id,fields:mergedFields});
@@ -5011,27 +5482,44 @@ newRows.push(newRow);
 });
 return next;
 });
-
 if(newRows.length>0)dbInsertTeleapoRows(newRows);
 mergedUpdates.forEach((u)=>dbUpdateTeleapoItem(u.id,u.fields));
 showNotif(`新規${newCount}件追加、${mergeCount}件マージ（ログ保持）`);
-};
-reader.readAsText(file,"UTF-8");
-e.target.value="";
 }
 
 function handleCSVExport(){
-const headers=["会社名","担当者名","役職","電話番号","業種","都道府県","担当者","媒体","架電結果","架電回数","クレームフラグ","架電禁止","最終更新"];
-const rows=filteredList.map((r)=>[
-r.company,r.contact,r.title,r.phone,r.industry||"",r.prefecture||"",r.owner,
-getSourceBadgeDyn(r.source)?.label||"",
-(r.callTags||[]).map((k)=>CALL_RESULTS.find((x)=>x.key===k)?.label||k).join("/"),r.callCount,
-r.flagClaim?"有":"",r.flagBanned?"有":"",r.updatedAt]
-);
+
+const STAGE_LABEL={"new":"","called":"架電済","connected":"接続","materials":"資料送付","appointed":"アポ取得"};
+const headers=["架電済","企業名","URL","売上高","住所","業種","TEL","社員数","担当者","架電日","次回架電日","部署・担当者","状況","メモ","媒体"];
+const rows=filteredList.map((r)=>{
+const lastLog=(r.callLogs||[]).slice(-1)[0];
+const lastDate=lastLog?.date||"";
+const statusLabel=(r.callTags||[]).map((k)=>CALL_RESULTS.find((x)=>x.key===k)?.label||k).join("/");
+const latestNote=lastLog?.note||"";
+const contactTitle=[r.title,r.contact].filter(Boolean).join(" ");
+return[
+STAGE_LABEL[r.reachedStage]||"",
+r.company,
+r.url||"",
+r.revenue||"",
+r.address||"",
+r.industry||"",
+r.phone||"",
+r.employees||"",
+r.owner,
+lastDate,
+r.nextCallDate||"",
+contactTitle,
+statusLabel,
+[latestNote,r.nextCallNote].filter(Boolean).join(" / "),
+getSourceBadgeDyn(r.source)?.label||""];
+
+});
 const csv=[headers,...rows].map((r)=>r.map((c)=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
 const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
 const url=URL.createObjectURL(blob);
-const a=document.createElement("a");a.href=url;a.download=`架電リスト_${today}.csv`;a.click();
+const prefLabel=filterPrefecture!=="all"?`_${filterPrefecture}`:"";
+const a=document.createElement("a");a.href=url;a.download=`架電リスト${prefLabel}_${today}.csv`;a.click();
 URL.revokeObjectURL(url);
 }
 
@@ -5165,12 +5653,14 @@ function showNotif(msg,type="info"){setNotification({msg,type});setTimeout(()=>s
 
 
 const owners=[...new Set(lists.map((r)=>r.owner))];
+const prefectures=[...new Set(lists.map((r)=>r.prefecture).filter(Boolean))].sort();
 const filteredList=lists.filter((r)=>{
 if(!showBanned&&r.flagBanned)return false;
 const matchResult=filterResult==="all"||(r.callTags||[]).includes(filterResult);
 const matchOwner=!isAdmin?r.owner===user.name:filterOwner==="all"||r.owner===filterOwner;
+const matchPref=filterPrefecture==="all"||(r.prefecture||"").includes(filterPrefecture);
 const matchSearch=!searchQ||r.company.includes(searchQ)||r.contact.includes(searchQ)||(r.phone||"").includes(searchQ);
-return matchResult&&matchOwner&&matchSearch;
+return matchResult&&matchOwner&&matchPref&&matchSearch;
 });
 
 
@@ -5206,7 +5696,7 @@ const prevTo=periodFrom?new Date(new Date(periodFrom).getTime()-86400000).toISOS
 const prevFrom=prevTo?new Date(new Date(prevTo).getTime()-(periodDays-1)*86400000).toISOString().slice(0,10):"";
 const prevStats=prevFrom?getStatsForPeriod(prevFrom,prevTo,myOwner):null;
 
-const memberStatsForPeriod=members.map((m)=>{
+const memberStatsForPeriod=salesMembers.map((m)=>{
 const s=getStatsForPeriod(periodFrom,periodTo,m.name);
 return{...m,...s};
 });
@@ -5422,7 +5912,7 @@ React.createElement("div",{style:{display:"flex",gap:6,alignItems:"center",flexW
 React.createElement("select",{value:assignTarget,onChange:(e)=>setAssignTarget(e.target.value),
 style:{padding:isMobile?"5px 8px":"7px 12px",background:"#f8faff",border:"1px solid #6c5ce7",borderRadius:7,color:"#94a3b8",fontSize:isMobile?11:13,outline:"none",fontFamily:"'Noto Sans JP',sans-serif"}},
 React.createElement("option",{value:""},"\u62C5\u5F53\u8005\u3092\u9078\u629E"),
-members.map((m)=>React.createElement("option",{key:m.name,value:m.name},m.name))
+salesMembers.map((m)=>React.createElement("option",{key:m.name,value:m.name},m.name))
 ),
 React.createElement("button",{onClick:handleBulkAssign,disabled:!assignTarget||selectedIds.size===0,
 style:{padding:isMobile?"5px 10px":"7px 14px",background:assignTarget&&selectedIds.size>0?"#6c5ce7":"#e8edf5",border:"none",borderRadius:7,color:assignTarget&&selectedIds.size>0?"#fff":"#94a3b8",fontSize:isMobile?11:13,fontWeight:600,cursor:assignTarget&&selectedIds.size>0?"pointer":"default",fontFamily:"'Noto Sans JP',sans-serif"}},
@@ -5438,11 +5928,10 @@ React.createElement(Users,{size:isMobile?11:13}),"\u30EA\u30B9\u30C8\u5272\u308A
 )),
 
 
-React.createElement("button",{onClick:()=>fileInputRef.current?.click(),
+React.createElement("button",{onClick:()=>setCsvImportOpen(true),
 style:{display:"flex",alignItems:"center",gap:6,padding:isMobile?"6px 10px":"8px 14px",background:"#f8faff",border:"1px solid #e8edf5",borderRadius:8,color:"#94a3b8",fontSize:isMobile?11:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},
 React.createElement(Upload,{size:isMobile?11:13}),isMobile?"CSV読込":"CSVインポート"
 ),
-React.createElement("input",{ref:fileInputRef,type:"file",accept:".csv",style:{display:"none"},onChange:handleCSVUpload}),
 React.createElement("button",{onClick:handleCSVExport,
 style:{display:"flex",alignItems:"center",gap:6,padding:isMobile?"6px 10px":"8px 14px",background:"#f8faff",border:"1px solid #e8edf5",borderRadius:8,color:"#94a3b8",fontSize:isMobile?11:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},
 React.createElement(Save,{size:isMobile?11:13}),isMobile?"CSV出力":"CSVエクスポート"
@@ -5540,6 +6029,19 @@ React.createElement("option",{value:"all"},"\u5168\u62C5\u5F53\u8005"),
 owners.map((o)=>React.createElement("option",{key:o,value:o},o))
 ),
 
+
+prefectures.length>1&&
+React.createElement("div",{style:{display:"flex",gap:2,flexWrap:"wrap"}},
+[{key:"all",label:"全地域"},...prefectures.map((p)=>({key:p,label:p}))].map((p)=>
+React.createElement("button",{key:p.key,onClick:()=>setFilterPrefecture(p.key),
+style:{padding:"5px 10px",borderRadius:6,border:`1px solid ${filterPrefecture===p.key?"#6c5ce7":"#e8edf5"}`,cursor:"pointer",fontSize:11,fontFamily:"'Noto Sans JP',sans-serif",
+background:filterPrefecture===p.key?"#ede9fe":"#fff",color:filterPrefecture===p.key?"#6c5ce7":"#64748b",
+fontWeight:filterPrefecture===p.key?700:400}},
+p.label
+)
+)
+),
+
 React.createElement("button",{onClick:()=>setShowBanned((b)=>!b),
 style:{padding:"5px 11px",background:showBanned?"#fef2f2":"#fff",border:`1px solid ${showBanned?"#ef4444":"#e8edf5"}`,borderRadius:6,color:showBanned?"#ef4444":"#64748b",fontSize:12,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",display:"flex",alignItems:"center",gap:5}},
 React.createElement(Ban,{size:12,color:showBanned?"#ef4444":"#94a3b8"}),"\u67B6\u96FB\u7981\u6B62\u3092",showBanned?"非表示":"表示"
@@ -5558,14 +6060,22 @@ checked:selectedIds.size===filteredList.length&&filteredList.length>0,
 style:{accentColor:"#3b82f6",cursor:"pointer"}})
 ),
 
-["会社名 / 担当者","電話番号","架電数","結果"].map((h,i)=>
-React.createElement("th",{key:i,style:{padding:"10px 14px",textAlign:"left",fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:"0.05em",whiteSpace:"nowrap"}},h)
+[
+{label:"",w:32},
+{label:"会社名 / 担当者"},
+{label:"電話番号"},
+{label:"架電数",w:80},
+{label:"結果"},
+...(!isMobile?[{label:"最新メモ"},{label:"媒体",w:80}]:[])].
+map((h,i)=>
+React.createElement("th",{key:i,style:{padding:"10px 10px",textAlign:"left",fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:"0.05em",whiteSpace:"nowrap",width:h.w||undefined}},h.label)
 )
 )
 ),
 React.createElement("tbody",null,
+(()=>{const colCount=(isMobile?5:7)+(assignMode?1:0);return null;})(),
 filteredList.length===0&&
-React.createElement("tr",null,React.createElement("td",{colSpan:assignMode?5:4,style:{padding:"40px",textAlign:"center",color:"#94a3b8",fontSize:13}},"\u30EA\u30B9\u30C8\u304C\u7A7A\u3067\u3059\u3002CSV\u3092\u30A4\u30F3\u30DD\u30FC\u30C8\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
+React.createElement("tr",null,React.createElement("td",{colSpan:99,style:{padding:"40px",textAlign:"center",color:"#94a3b8",fontSize:13}},"\u30EA\u30B9\u30C8\u304C\u7A7A\u3067\u3059\u3002CSV\u3092\u30A4\u30F3\u30DD\u30FC\u30C8\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
 
 )),
 
@@ -5580,27 +6090,23 @@ background:item.flagBanned?"#fef2f2":item.flagClaim?"#fffbeb":isExpanded?"#f0f4f
 cursor:"pointer"},
 onClick:()=>setExpandedId(isExpanded?null:item.id)},
 assignMode&&
-React.createElement("td",{style:{padding:"12px 14px"},onClick:(e)=>e.stopPropagation()},
+React.createElement("td",{style:{padding:"8px 10px"},onClick:(e)=>e.stopPropagation()},
 React.createElement("input",{type:"checkbox",checked:selectedIds.has(item.id),onChange:()=>toggleSelect(item.id),
 style:{accentColor:"#3b82f6",cursor:"pointer"}})
 ),
 
 
-React.createElement("td",{style:{padding:"12px 14px"}},
+React.createElement("td",{style:{padding:"8px 6px",textAlign:"center",width:32}},
+React.createElement("span",{style:{display:"inline-block",width:8,height:8,borderRadius:"50%",background:STAGE_DOT[item.reachedStage]||"#e2e8f0"}})
+),
+
+React.createElement("td",{style:{padding:"8px 10px"}},
 React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6}},
 item.flagBanned&&React.createElement(Ban,{size:12,color:"#ef4444"}),
 item.flagClaim&&React.createElement(AlertTriangle,{size:12,color:"#f59e0b"}),
 React.createElement("div",null,
 React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6,marginBottom:2}},
-React.createElement("span",{style:{fontWeight:600,color:item.flagBanned?"#ef4444":"#0f172a",fontSize:13,textDecoration:item.flagBanned?"line-through":"none"}},item.company),
-item.source&&(()=>{
-const src=getSourceBadgeDyn(item.source);
-return src?
-React.createElement("span",{style:{fontSize:9,fontWeight:700,color:src.color,background:src.bg,borderRadius:4,padding:"2px 6px",flexShrink:0,letterSpacing:"0.02em"}},
-src.label
-):
-null;
-})()
+React.createElement("span",{style:{fontWeight:600,color:item.flagBanned?"#ef4444":"#0f172a",fontSize:13,textDecoration:item.flagBanned?"line-through":"none"}},item.company)
 ),
 React.createElement("div",{style:{fontSize:11,color:"#64748b"}},
 item.contact?
@@ -5613,26 +6119,28 @@ isAdmin&&React.createElement("span",{style:{marginLeft:8,background:"#ede9fe",bo
 )
 ),
 
-React.createElement("td",{style:{padding:"12px 14px"}},
+React.createElement("td",{style:{padding:"8px 10px"}},
 isMobile&&item.phone?
-React.createElement("a",{href:`tel:${item.phone}`,style:{fontFamily:"'DM Mono',monospace",fontSize:13,color:"#3b82f6",textDecoration:"none",display:"flex",alignItems:"center",gap:4},
+React.createElement("a",{href:`tel:${item.phone}`,style:{fontFamily:"'DM Mono',monospace",fontSize:12,color:"#3b82f6",textDecoration:"none",display:"flex",alignItems:"center",gap:4},
 onClick:(e)=>e.stopPropagation()},
 item.phone
 ):
-React.createElement("div",{style:{fontFamily:"'DM Mono',monospace",fontSize:13,color:"#94a3b8"}},item.phone)
+React.createElement("div",{style:{fontFamily:"'DM Mono',monospace",fontSize:12,color:"#94a3b8"}},item.phone)
 
 ),
 
-React.createElement("td",{style:{padding:"12px 14px"}},
-React.createElement("div",{style:{display:"flex",alignItems:"center",gap:4}},
-React.createElement("span",{style:{fontFamily:"'DM Mono',monospace",fontSize:16,fontWeight:700,color:"#3b82f6",minWidth:24}},item.callCount),
-React.createElement("span",{style:{fontSize:10,color:"#94a3b8"}},"\u56DE")
-)
+React.createElement("td",{style:{padding:"8px 10px",textAlign:"center"}},
+React.createElement("div",{style:{fontFamily:"'DM Mono',monospace",fontSize:16,fontWeight:700,color:"#3b82f6"}},item.callCount),
+(()=>{
+const lastLog=(item.callLogs||[]).slice(-1)[0];
+return lastLog?.date?
+React.createElement("div",{style:{fontSize:10,color:"#94a3b8",fontFamily:"'DM Mono',monospace"}},lastLog.date.slice(5)):
+React.createElement("div",{style:{fontSize:10,color:"#cbd5e1"}},"\u2014");
+})()
 ),
 
-React.createElement("td",{style:{padding:"10px 14px"},onClick:(e)=>e.stopPropagation()},
+React.createElement("td",{style:{padding:"8px 10px"},onClick:(e)=>e.stopPropagation()},
 React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6}},
-
 React.createElement("button",{
 onClick:()=>{if(isEditing){setResultEditId(null);setResultNote("");setPendingTags([]);}else{setResultEditId(item.id);setResultNote("");setPendingTags([...(item.callTags||[])]);}},
 style:{
@@ -5659,17 +6167,40 @@ React.createElement("svg",{width:"10",height:"10",viewBox:"0 0 10 10",style:{fle
 React.createElement("path",{d:"M1 3l4 4 4-4",stroke:"#94a3b8",strokeWidth:"1.5",fill:"none",strokeLinecap:"round"})
 )
 ),
-
 React.createElement(ChevronRight,{size:14,color:"#334155",
 style:{transform:isExpanded?"rotate(90deg)":"none",transition:"transform 0.2s",cursor:"pointer",flexShrink:0},
 onClick:(e)=>{e.stopPropagation();setExpandedId(isExpanded?null:item.id);}})
 )
+),
+
+!isMobile&&
+React.createElement("td",{style:{padding:"8px 10px",maxWidth:180}},
+(()=>{
+const lastLog=(item.callLogs||[]).slice(-1)[0];
+return lastLog?.note?
+React.createElement("div",{style:{fontSize:11,color:"#64748b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},lastLog.note):
+React.createElement("span",{style:{fontSize:11,color:"#cbd5e1"}},"\u2014");
+})()
+),
+
+
+!isMobile&&
+React.createElement("td",{style:{padding:"8px 10px"}},
+item.source&&(()=>{
+const src=getSourceBadgeDyn(item.source);
+return src?
+React.createElement("span",{style:{fontSize:10,fontWeight:700,color:src.color,background:src.bg,borderRadius:4,padding:"2px 6px",whiteSpace:"nowrap"}},
+src.label
+):
+null;
+})()
 )
+
 ),
 
 isEditing&&
 React.createElement("tr",null,
-React.createElement("td",{colSpan:assignMode?5:4,style:{background:"#f5f3ff",borderBottom:"1px solid #e8edf5",padding:"0"},
+React.createElement("td",{colSpan:99,style:{background:"#f5f3ff",borderBottom:"1px solid #e8edf5",padding:"0"},
 onClick:(e)=>e.stopPropagation()},
 React.createElement("div",{style:{padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}},
 React.createElement("div",{style:{fontSize:10,color:"#6c5ce7",fontWeight:700,letterSpacing:"0.08em"}},"\u7D50\u679C\u3092\u9078\u629E\uFF08\u8907\u6570\u53EF\uFF09"),
@@ -5788,7 +6319,7 @@ style:{padding:"7px 18px",borderRadius:8,border:"none",background:"#6c5ce7",colo
 
 isExpanded&&
 React.createElement("tr",null,
-React.createElement("td",{colSpan:assignMode?5:4,style:{background:"#f8faff",borderBottom:"1px solid #e8edf5",padding:"0 14px 16px"}},
+React.createElement("td",{colSpan:99,style:{background:"#f8faff",borderBottom:"1px solid #e8edf5",padding:"0 14px 16px"}},
 React.createElement("div",{style:{paddingTop:14,display:"flex",flexDirection:"column",gap:14}},
 
 
@@ -5846,6 +6377,27 @@ placeholder:f.placeholder,
 onClick:(e)=>e.stopPropagation(),
 style:{width:"100%",background:"#f8faff",border:"1px solid #e8edf5",borderRadius:6,padding:"5px 8px",fontSize:12,color:"#0f172a",outline:"none",fontFamily:"'Noto Sans JP',sans-serif",boxSizing:"border-box"}})
 )
+)
+)
+),
+
+
+React.createElement("div",{style:{background:"#fff",border:"1px solid #e8edf5",borderRadius:10,padding:"12px 14px"}},
+React.createElement("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:"0.06em",marginBottom:8}},"\u6B21\u56DE\u67B6\u96FB\u4E88\u5B9A"),
+React.createElement("div",{style:{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap"}},
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:10,color:"#94a3b8",marginBottom:3}},"\u65E5\u4ED8"),
+React.createElement("input",{type:"date",value:item.nextCallDate||"",
+onChange:(e)=>updateList(item.id,{nextCallDate:e.target.value}),
+onClick:(e)=>e.stopPropagation(),
+style:{background:"#f8faff",border:"1px solid #e8edf5",borderRadius:6,padding:"5px 8px",fontSize:12,color:"#0f172a",outline:"none",fontFamily:"'DM Mono',monospace"}})
+),
+React.createElement("div",{style:{flex:1,minWidth:180}},
+React.createElement("div",{style:{fontSize:10,color:"#94a3b8",marginBottom:3}},"\u30E1\u30E2"),
+React.createElement("input",{value:item.nextCallNote||"",placeholder:"\u6B21\u56DE\u67B6\u96FB\u6642\u306E\u30E1\u30E2\uFF08\u4F8B: \u706B\u66DC\u5348\u524D\u306B\u518D\u67B6\u96FB\uFF09",
+onChange:(e)=>updateList(item.id,{nextCallNote:e.target.value}),
+onClick:(e)=>e.stopPropagation(),
+style:{width:"100%",background:"#f8faff",border:"1px solid #e8edf5",borderRadius:6,padding:"5px 8px",fontSize:12,color:"#0f172a",outline:"none",fontFamily:"'Noto Sans JP',sans-serif",boxSizing:"border-box"}})
 )
 )
 ),
@@ -6182,6 +6734,18 @@ React.createElement("span",{style:{fontSize:11,color:"#94a3b8",fontFamily:"'DM M
 )
 )
 
+),
+
+
+
+csvImportOpen&&
+React.createElement(CSVImportModal,{
+onClose:()=>setCsvImportOpen(false),
+onImport:handleCSVImportFromModal,
+sourceList:sourceList,
+userName:user.name,
+existingLists:lists,
+salesMembers:salesMembers}
 )
 
 ));
@@ -6243,7 +6807,8 @@ const ownerColor=(n)=>OWNER_COLORS[n]??DEF_OC;
 const EVENT_TYPES={
 nextAction:{label:"次回アクション（顧客）",Icon:_CalIcTarget,color:"#2563eb",bg:"#dbeafe",border:"#bfdbfe"},
 recontactAction:{label:"次回アクション（追客）",Icon:_CalIcRotate,color:"#7c3aed",bg:"#ede9fe",border:"#ddd6fe"},
-recontactDate:{label:"追客予定日（失注）",Icon:_CalIcCalendar,color:"#d97706",bg:"#fef3c7",border:"#fde68a"}
+recontactDate:{label:"追客予定日（失注）",Icon:_CalIcCalendar,color:"#d97706",bg:"#fef3c7",border:"#fde68a"},
+googleCalendar:{label:"Googleカレンダー",Icon:_CalIcCalendar,color:"#059669",bg:"#d1fae5",border:"#a7f3d0"}
 };
 
 const JP_DOW=["月","火","水","木","金","土","日"];
@@ -6358,6 +6923,8 @@ ev.sub
 ),
 
 React.createElement("div",{style:{display:"flex",alignItems:"center",gap:7,marginBottom:16}},
+ev.type!=="googleCalendar"&&
+React.createElement(React.Fragment,null,
 React.createElement(_CalIcUser,{size:12,color:"#94a3b8"}),
 React.createElement("span",{style:{display:"inline-flex",alignItems:"center",gap:5,
 padding:"3px 8px",borderRadius:20,background:oc.bg}},
@@ -6365,7 +6932,21 @@ React.createElement("span",{style:{width:6,height:6,borderRadius:"50%",backgroun
 React.createElement("span",{style:{fontSize:11,fontWeight:600,color:oc.text}},ev.owner)
 )
 ),
+
+ev.type==="googleCalendar"&&ev.raw?.location&&
+React.createElement("span",{style:{fontSize:11,color:"#64748b"}},ev.raw.location)
+
+),
 React.createElement("div",{style:{display:"flex",gap:8}},
+ev.type==="googleCalendar"?
+React.createElement("a",{href:ev.htmlLink||"#",target:"_blank",rel:"noopener noreferrer",
+onClick:(e)=>e.stopPropagation(),
+style:{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+padding:"9px",background:def.color,color:"#fff",border:"none",borderRadius:8,
+fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",textDecoration:"none"}},"Google\u30AB\u30EC\u30F3\u30C0\u30FC\u3067\u958B\u304F ",
+React.createElement(_CalIcArrowR,{size:12,color:"#fff"})
+):
+
 React.createElement("button",{onClick:()=>{
 if(ev.source==="customer"&&onOpenCustomer)onOpenCustomer(ev.raw);else
 if(ev.source==="recontact"&&onOpenRecontact)onOpenRecontact(ev.raw);
@@ -6375,6 +6956,7 @@ padding:"9px",background:def.color,color:"#fff",border:"none",borderRadius:8,
 fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u8A73\u7D30\u3092\u958B\u304F ",
 React.createElement(_CalIcArrowR,{size:12,color:"#fff"})
 ),
+
 React.createElement("button",{onClick:onClose,style:{display:"flex",alignItems:"center",
 justifyContent:"center",width:38,background:"#f1f5f9",
 border:"none",borderRadius:8,cursor:"pointer"}},
@@ -6758,7 +7340,8 @@ recontacts=[],
 lostApproved=[],
 isAdmin=false,
 onOpenCustomer=null,
-onOpenRecontact=null
+onOpenRecontact=null,
+gcal=null
 }){
 const today=new Date();
 
@@ -6783,6 +7366,29 @@ const[selectedTypes,setSelectedTypes]=useState(new Set(Object.keys(EVENT_TYPES))
 const[popover,setPopover]=useState(null);
 
 
+const[gcalEvents,setGcalEvents]=useState([]);
+const[gcalLoading,setGcalLoading]=useState(false);
+const[showGcal,setShowGcal]=useState(true);
+
+
+useEffect(()=>{
+if(!gcal?.connected||!showGcal){setGcalEvents([]);return;}
+let cancelled=false;
+_asyncToGenerator(function*(){
+setGcalLoading(true);
+
+const rangeStart=new Date(year,month-1,1);
+const rangeEnd=new Date(year,month+2,0);
+const events=yield gcal.fetchEvents(
+rangeStart.toISOString().slice(0,10),
+rangeEnd.toISOString().slice(0,10)
+);
+if(!cancelled){setGcalEvents(events);setGcalLoading(false);}
+})();
+return()=>{cancelled=true;};
+},[gcal?.connected,showGcal,year,month]);
+
+
 const allOwners=useMemo(()=>{
 const s=new Set();
 [...customers,...recontacts,...lostApproved].forEach((x)=>x.owner&&s.add(x.owner));
@@ -6790,12 +7396,21 @@ return Array.from(s).sort();
 },[customers,recontacts,lostApproved]);
 
 
-const allEvents=useMemo(
-()=>buildEvents(customers,recontacts,lostApproved),
-[customers,recontacts,lostApproved]
-);
+const allEvents=useMemo(()=>{
+const crmEvents=buildEvents(customers,recontacts,lostApproved);
+if(!showGcal||gcalEvents.length===0)return crmEvents;
+
+const gEvents=gcalEvents.map((ev)=>({
+id:`gcal-${ev.id}`,type:"googleCalendar",
+date:ev.date,time:ev.time||"",
+title:ev.title,sub:ev.allDay?"終日":ev.time&&ev.endTime?`${ev.time}〜${ev.endTime}`:"",
+owner:"",source:"google",raw:ev,
+htmlLink:ev.htmlLink
+}));
+return[...crmEvents,...gEvents];
+},[customers,recontacts,lostApproved,gcalEvents,showGcal]);
 const filteredEvents=useMemo(()=>allEvents.filter((ev)=>
-(!selectedOwner||ev.owner===selectedOwner)&&selectedTypes.has(ev.type)
+(!selectedOwner||ev.owner===selectedOwner||ev.type==="googleCalendar")&&selectedTypes.has(ev.type)
 ),[allEvents,selectedOwner,selectedTypes]);
 
 const eventsByDate=useMemo(()=>{
@@ -6996,7 +7611,42 @@ fontFamily:"'Noto Sans JP',sans-serif"}},
 React.createElement(Icon,{size:11,color:active?def.color:"#94a3b8"}),def.label
 ));
 
-})
+}),
+
+
+gcal&&
+React.createElement(React.Fragment,null,
+React.createElement("div",{style:{width:1,height:16,background:"#e8edf5",flexShrink:0}}),
+!gcal.connected?
+React.createElement("button",{onClick:()=>gcal.requestAccess(),disabled:gcal.loading,
+style:{display:"inline-flex",alignItems:"center",gap:5,
+padding:"4px 11px",borderRadius:20,fontSize:11,fontWeight:600,cursor:"pointer",
+border:"1.5px solid #059669",background:"#d1fae5",color:"#059669",
+fontFamily:"'Noto Sans JP',sans-serif",whiteSpace:"nowrap"}},
+React.createElement(_CalIcCalendar,{size:11,color:"#059669"}),
+gcal.loading?"接続中...":"Googleカレンダー連携"
+):
+
+React.createElement("div",{style:{display:"flex",gap:4,alignItems:"center"}},
+React.createElement("button",{onClick:()=>setShowGcal((s)=>!s),
+style:{display:"inline-flex",alignItems:"center",gap:5,
+padding:"4px 11px",borderRadius:20,fontSize:11,fontWeight:600,cursor:"pointer",
+border:`1.5px solid ${showGcal?"#059669":"#e8edf5"}`,
+background:showGcal?"#d1fae5":"#fff",color:showGcal?"#059669":"#94a3b8",
+fontFamily:"'Noto Sans JP',sans-serif",whiteSpace:"nowrap"}},
+React.createElement(_CalIcCalendar,{size:11,color:showGcal?"#059669":"#94a3b8"}),"Google ",
+gcalLoading?"読込中...":"連携中"
+),
+React.createElement("button",{onClick:()=>gcal.disconnect(),
+style:{fontSize:10,color:"#94a3b8",background:"none",border:"none",cursor:"pointer",
+fontFamily:"'Noto Sans JP',sans-serif",whiteSpace:"nowrap"}},"\u89E3\u9664"
+
+)
+),
+
+gcal.error&&React.createElement("span",{style:{fontSize:10,color:"#ef4444"}},gcal.error)
+)
+
 ),
 
 
@@ -7054,10 +7704,36 @@ function Dashboard({user,onLogout}){
 const{isMobile,isTablet}=useResponsive();
 const[activeNav,setActiveNav]=useState(user.role==="clerk"?10:0);
 const isAdmin=user.role==="admin";
-const actions=isAdmin?allActions:allActions.filter((a)=>a.ownerName===user.name);
+
+const todayStr=new Date().toISOString().slice(0,10);
+const actions=useMemo(()=>{
+const URGENT_STAGES=new Set(["④","⑤","⑥","⑦"]);
+const items=[];
+customers.forEach((c)=>{
+if(c.nextAction?.date===todayStr){
+items.push({
+id:`c-${c.id}`,ownerName:c.owner,company:c.company,
+contact:c.contact,action:c.nextAction.content||"次回アクション",
+stage:c.stage,time:c.nextAction.time||"",urgent:URGENT_STAGES.has(c.stage)
+});
+}
+});
+recontacts.filter((r)=>r.status==="active").forEach((r)=>{
+if(r.nextAction?.date===todayStr){
+items.push({
+id:`r-${r.id}`,ownerName:r.owner,company:r.company,
+contact:r.contact,action:r.nextAction.content||"追客アクション",
+stage:r.stage||"①",time:r.nextAction.time||"",urgent:false
+});
+}
+});
+
+const filtered=isAdmin?items:items.filter((a)=>a.ownerName===user.name);
+return filtered.sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
+},[customers,recontacts,todayStr,isAdmin,user.name]);
 
 
-const[customers,setCustomers]=useCustomers(INIT_CUSTOMERS);
+const[customers,setCustomers]=useCustomers([]);
 
 const[allLostRecords,setAllLostRecords]=useLostRecords([]);
 const lostRequests=allLostRecords.filter((r)=>r.status==="pending");
@@ -7066,14 +7742,14 @@ const[recontacts,setRecontacts]=useRecontacts([]);
 
 const[teleapoLists,setTeleapoLists]=useTeleapoLists([]);
 
+const dbMembers=useMembers();
+const salesMembers=dbMembers.filter((m)=>m.role!=="clerk");
 
-const[notice,setNotice]=useState({
-active:true,
-title:"本日のお知らせ",
-body:"今週の目標架電数は1人あたり40件です。\nアポ取得後は必ず当日中にCRMへ入力をお願いします。\n不明点は管理者まで連絡してください。",
-author:"管理者",
-date:new Date().toISOString().slice(0,10)
-});
+const recontactSentIds=useMemo(()=>new Set(recontacts.filter((r)=>r.lostId).map((r)=>r.lostId)),[recontacts]);
+
+
+const[notice,saveNotice]=useNotice();
+const setNotice=saveNotice;
 const[noticeOpen,setNoticeOpen]=useState(true);
 const[openNewCustomer,setOpenNewCustomer]=useState(false);
 const[customerGroupOpen,setCustomerGroupOpen]=useState(true);
@@ -7082,14 +7758,18 @@ const[noticeDraft,setNoticeDraft]=useState(null);
 
 const[sourceList,setSourceList]=useState([...SOURCE_LIST]);
 
+const gcal=useGoogleCalendar();
 
 
-const[clerkTodos,setClerkTodos]=useState([]);
+
+
+const[clerkTodos,setClerkTodos]=useClerkTodos();
 
 
 function createClerkTodo({customerId,company,contact,email,owner,type,triggerStage,memo}){
+const tempId=`ct-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
 const todo={
-id:`ct-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+id:tempId,
 customerId,company,contact:contact||"",email:email||"",
 owner:owner||"",type,triggerStage:triggerStage||null,
 status:"pending",memo:memo||"",
@@ -7097,6 +7777,15 @@ createdAt:new Date().toISOString().slice(0,16),
 completedAt:null
 };
 setClerkTodos((ts)=>[todo,...ts]);
+
+_asyncToGenerator(function*(){
+const sb=yield getSupabase();
+if(!sb)return;
+const row=clerkTodoToRow(todo);
+const{data,error}=yield sb.from("clerk_todos").insert(row).select("*").single();
+if(error){console.error("clerk_todos insert error:",error);return;}
+if(data)setClerkTodos((ts)=>ts.map((t)=>t.id===tempId?rowToClerkTodo(data):t));
+})();
 }
 
 const pendingCount=lostRequests.filter((r)=>r.status==="pending").length;
@@ -7203,8 +7892,6 @@ yield sb.from("lost_records").update(updateRow).eq("id",id);
 }
 
 function handleSendToRecontact(lostItem){
-
-setAllLostRecords((ls)=>ls.map((l)=>l.id===lostItem.id?{...l,recontactSent:true}:l));
 const today=new Date().toISOString().slice(0,10);
 const entry={
 lostId:lostItem.id,
@@ -7252,7 +7939,36 @@ const row=recontactToRow(updatedRecontact);
 row.updated_at=new Date().toISOString();
 yield sb.from("recontacts").update(row).eq("id",updatedRecontact.id);
 })();
+}function
+
+
+syncNextActionToGcal(_x21,_x22){return _syncNextActionToGcal.apply(this,arguments);}function _syncNextActionToGcal(){_syncNextActionToGcal=_asyncToGenerator(function*(customer,nextAction){
+if(!gcal?.connected||!nextAction?.date)return;
+const summary=`[Gakusapo] ${customer.company} — ${nextAction.content||"次回アクション"}`;
+const description=`担当: ${customer.owner}\n${nextAction.content||""}`;
+const eventData={
+summary,description,
+date:nextAction.date,
+startTime:nextAction.time||null,
+endTime:nextAction.time?(()=>{
+const[h,m]=nextAction.time.split(":").map(Number);
+const eh=Math.min(h+1,23);
+return`${String(eh).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+})():null
+};
+try{
+if(customer.google_event_id){
+
+yield gcal.updateEvent(customer.google_event_id,eventData);
+}else{
+
+const eventId=yield gcal.createEvent(eventData);
+if(eventId){
+setCustomers((cs)=>cs.map((c)=>c.id===customer.id?{...c,google_event_id:eventId}:c));
 }
+}
+}catch(e){console.warn("GCal sync error:",e);}
+});return _syncNextActionToGcal.apply(this,arguments);}
 
 const[mobileMenuOpen,setMobileMenuOpen]=useState(false);
 
@@ -7535,7 +8251,7 @@ React.createElement(Settings,{size:15,color:"#94a3b8"})
 
 
 React.createElement("div",{style:{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",paddingBottom:isMobile?64:0}},
-activeNav===0&&React.createElement(DashboardHome,{user:user,actions:actions,customers:customers,teleapoLists:teleapoLists,isMobile:isMobile,isTablet:isTablet}),
+activeNav===0&&React.createElement(DashboardHome,{user:user,actions:actions,customers:customers,teleapoLists:teleapoLists,salesMembers:salesMembers,isMobile:isMobile,isTablet:isTablet}),
 activeNav===1&&
 React.createElement(TeleapoPage,{
 user:user,
@@ -7545,7 +8261,8 @@ sourceList:sourceList,
 setSourceList:setSourceList,
 lists:teleapoLists,
 setLists:setTeleapoLists,
-onCreateTodo:createClerkTodo}
+onCreateTodo:createClerkTodo,
+salesMembers:salesMembers}
 ),
 
 activeNav===2&&
@@ -7559,7 +8276,9 @@ setTeleapoLists:setTeleapoLists,
 openNewModal:openNewCustomer,
 onNewModalOpened:()=>setOpenNewCustomer(false),
 onCreateTodo:createClerkTodo,
-clerkTodos:clerkTodos}
+clerkTodos:clerkTodos,
+salesMembers:salesMembers,
+onSyncGcal:syncNextActionToGcal}
 ),
 
 activeNav===3&&
@@ -7571,7 +8290,8 @@ onApprove:handleApprove,
 onReject:handleReject,
 onUpdate:handleLostUpdate,
 onSendToRecontact:handleSendToRecontact,
-customers:customers}
+customers:customers,
+recontactSentIds:recontactSentIds}
 ),
 
 activeNav===4&&
@@ -7591,7 +8311,8 @@ recontacts:recontacts,
 lostApproved:lostApproved,
 isAdmin:isAdmin,
 onOpenCustomer:()=>setActiveNav(2),
-onOpenRecontact:()=>setActiveNav(4)}
+onOpenRecontact:()=>setActiveNav(4),
+gcal:gcal}
 ),
 
 activeNav===6&&
@@ -7610,7 +8331,8 @@ setNotice:setNotice,
 noticeOpen:noticeOpen,
 setNoticeOpen:setNoticeOpen,
 sourceList:sourceList,
-setSourceList:setSourceList}
+setSourceList:setSourceList,
+dbMembers:dbMembers}
 ),
 
 activeNav===10&&(isClerk||isAdmin)&&
@@ -7800,16 +8522,25 @@ replace(/\$\{owner\}/g,todo.owner||"");
 
 
 function markDone(id){
+const now=new Date().toISOString();
 setTodos((ts)=>ts.map((t)=>t.id===id?
-{...t,status:"done",completedAt:new Date().toISOString().slice(0,16)}:
+{...t,status:"done",completedAt:now.slice(0,16),completedBy:user.name}:
 t
 ));
+_asyncToGenerator(function*(){
+const sb=yield getSupabase();
+if(sb)yield sb.from("clerk_todos").update({status:"done",completed_by:user.name,completed_at:now,updated_at:now}).eq("id",id);
+})();
 }
 function markUndone(id){
 setTodos((ts)=>ts.map((t)=>t.id===id?
-{...t,status:"pending",completedAt:null}:
+{...t,status:"pending",completedAt:null,completedBy:null}:
 t
 ));
+_asyncToGenerator(function*(){
+const sb=yield getSupabase();
+if(sb)yield sb.from("clerk_todos").update({status:"pending",completed_by:null,completed_at:null,updated_at:new Date().toISOString()}).eq("id",id);
+})();
 }
 
 
@@ -8830,16 +9561,18 @@ React.createElement("div",{style:{marginTop:10,fontSize:10,color:"#94a3b8"}},"\u
 
 
 
-function AdminSettingsPage({notice,setNotice,noticeOpen,setNoticeOpen,sourceList,setSourceList}){
-const INIT_MEMBERS=[
-{name:"吉村",role:"staff",email:"yoshimura@example.com",active:true,target:{calls:40,appts:7,contracts:2}},
-{name:"大原",role:"staff",email:"ohara@example.com",active:true,target:{calls:40,appts:7,contracts:2}},
-{name:"小島",role:"staff",email:"kojima@example.com",active:true,target:{calls:40,appts:7,contracts:2}},
-{name:"まゆな",role:"staff",email:"mayuna@example.com",active:true,target:{calls:40,appts:7,contracts:2}},
-{name:"ななみ",role:"staff",email:"nanami@example.com",active:true,target:{calls:40,appts:7,contracts:2}}];
+function AdminSettingsPage({notice,setNotice,noticeOpen,setNoticeOpen,sourceList,setSourceList,dbMembers=[]}){
 
+const[memberList,setMemberList]=useState([]);
+useEffect(()=>{
+if(dbMembers.length>0){
+setMemberList(dbMembers.map((m)=>({
+name:m.name,role:m.role,email:m.email,active:true,
+target:{calls:40,appts:7,contracts:2}
+})));
+}
+},[dbMembers]);
 const[tab,setTab]=useState("notice");
-const[memberList,setMemberList]=useState(INIT_MEMBERS);
 const[editingMember,setEditingMember]=useState(null);
 const[noticeDraft,setNoticeDraft]=useState({...notice});
 const[noticeSaved,setNoticeSaved]=useState(false);
