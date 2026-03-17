@@ -4962,7 +4962,7 @@ return rows;
 
 
 const CSV_COL_DEFS=[
-{key:"company",label:"会社名",patterns:[/会社|社名|company|法人/i],required:true},
+{key:"company",label:"会社名",patterns:[/会社|社名|企業|company|法人/i],required:true},
 {key:"contact",label:"担当者名",patterns:[/担当者?名?|contact|氏名|名前/i]},
 {key:"title",label:"役職",patterns:[/役職|title|肩書/i]},
 {key:"phone",label:"電話番号",patterns:[/電話|phone|tel|TEL/i]},
@@ -5490,7 +5490,7 @@ showNotif(`新規${newCount}件追加、${mergeCount}件マージ（ログ保持
 function handleCSVExport(){
 
 const STAGE_LABEL={"new":"","called":"架電済","connected":"接続","materials":"資料送付","appointed":"アポ取得"};
-const headers=["架電済","企業名","URL","売上高","住所","業種","TEL","社員数","担当者","架電日","次回架電日","部署・担当者","状況","メモ","媒体"];
+const headers=["架電済","会社名","URL","売上高","住所","業種","TEL","社員数","担当者","架電日","次回架電日","部署・担当者","状況","メモ","媒体"];
 const rows=filteredList.map((r)=>{
 const lastLog=(r.callLogs||[]).slice(-1)[0];
 const lastDate=lastLog?.date||"";
