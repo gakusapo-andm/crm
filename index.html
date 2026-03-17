@@ -10,14 +10,10 @@
     body { font-family: 'Noto Sans JP', sans-serif; background: #f0f4ff; }
     #root { min-height: 100vh; }
   </style>
-  <!-- React 18 -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- PropTypes (Recharts dependency) -->
   <script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
-  <!-- Recharts -->
   <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
-  <!-- Supabase -->
   <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
     window._supabaseCreateClient = createClient;
@@ -28,16 +24,6 @@
   <div id="root"></div>
   <script>
 function asyncGeneratorStep(n,t,e,r,o,a,c){try{var i=n[a](c),u=i.value;}catch(n){return void e(n);}i.done?t(u):Promise.resolve(u).then(r,o);}function _asyncToGenerator(n){return function(){var t=this,e=arguments;return new Promise(function(r,o){var a=n.apply(t,e);function _next(n){asyncGeneratorStep(a,r,o,_next,_throw,"next",n);}function _throw(n){asyncGeneratorStep(a,r,o,_next,_throw,"throw",n);}_next(void 0);});};}
-const{useState,useEffect,useRef,useMemo}=React;
-const{
-BarChart,Bar,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,
-PieChart,Pie,Cell,
-ComposedChart,Line,Area,
-RadarChart,Radar,PolarGrid,PolarAngleAxis,
-Legend,LabelList
-}=Recharts;
-
-
 
 
 function useResponsive(){
@@ -184,26 +170,17 @@ const SUPA_ANON="sb_publishable_Tu2UxhRYKM56vgpNkdkXIA_ZEgtKepN";
 
 
 let _supabase=null;
-const _supabaseReady=new Promise((resolve)=>{
-function tryInit(){
-if(window._supabaseCreateClient){
+const _supabaseReady=_asyncToGenerator(function*(){
 try{
-_supabase=window._supabaseCreateClient(SUPA_URL,SUPA_ANON);
+const{createClient}=yield import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm");
+_supabase=createClient(SUPA_URL,SUPA_ANON);
 console.log("Supabase 接続完了（統合DB v13）");
-resolve(_supabase);
+return _supabase;
 }catch(e){
-console.warn("Supabase 初期化失敗:",e.message);
-resolve(null);
+console.warn("Supabase 読み込み失敗（オフラインモードで動作）:",e.message);
+return null;
 }
-}else{
-
-window.addEventListener('supabase-ready',tryInit,{once:true});
-
-setTimeout(()=>{if(!_supabase){console.warn("Supabase ロードタイムアウト");resolve(null);}},5000);
-}
-}
-tryInit();
-});function
+})();function
 
 
 getSupabase(){return _getSupabase.apply(this,arguments);}function _getSupabase(){_getSupabase=_asyncToGenerator(function*(){
@@ -488,7 +465,7 @@ const sb=_supabase;
 
 
 const dealsCh=sb.channel("crm-deals-rt").
-on("postgres_changes",{event:"*",schema:"public",table:"crm_deals"},function(){var _ref=_asyncToGenerator(function*(payload){
+on("postgres_changes",{event:"*",schema:"public",table:"crm_deals"},function(){var _ref2=_asyncToGenerator(function*(payload){
 if(payload.eventType==="DELETE"){
 _setCustomers((cs)=>cs.filter((c)=>c.id!==payload.old.id));
 }else{
@@ -509,14 +486,14 @@ return[...cs,customer];
 });
 }
 }
-});return function(_x4){return _ref.apply(this,arguments);};}()).subscribe();
+});return function(_x4){return _ref2.apply(this,arguments);};}()).subscribe();
 
 
 
 
 
 const companiesCh=sb.channel("companies-rt").
-on("postgres_changes",{event:"UPDATE",schema:"public",table:"companies"},function(){var _ref2=_asyncToGenerator(function*(payload){
+on("postgres_changes",{event:"UPDATE",schema:"public",table:"companies"},function(){var _ref3=_asyncToGenerator(function*(payload){
 const companyId=payload.new.id;
 
 const{data:deals}=yield sb.
@@ -528,7 +505,7 @@ const fresh=updated.find((u)=>u.id===c.id);
 return fresh??c;
 }));
 }
-});return function(_x5){return _ref2.apply(this,arguments);};}()).subscribe();
+});return function(_x5){return _ref3.apply(this,arguments);};}()).subscribe();
 
 return()=>{
 sb.removeChannel(dealsCh);
@@ -725,7 +702,7 @@ return()=>{cancelled=true;};
 useEffect(()=>{
 if(!supaReady||!_supabase)return;
 const sb=_supabase;
-const reload=function(){var _ref4=_asyncToGenerator(function*(teleapoId){
+const reload=function(){var _ref5=_asyncToGenerator(function*(teleapoId){
 const{data}=yield sb.from("teleapo_list_view").select("*").eq("id",teleapoId).maybeSingle();
 if(data){
 const item=rowToTeleapoItem(data);
@@ -735,7 +712,7 @@ return exists?prev.map((r)=>r.id===data.id?{...r,...item,comments:r.comments,adm
 [...prev,item];
 });
 }
-});return function reload(_x12){return _ref4.apply(this,arguments);};}();
+});return function reload(_x12){return _ref5.apply(this,arguments);};}();
 const ch1=sb.channel("teleapo-lists-rt").
 on("postgres_changes",{event:"*",schema:"public",table:"teleapo_lists"},(payload)=>{
 if(payload.eventType==="DELETE"){
@@ -4175,14 +4152,14 @@ const btnRef=useRef(null);
 const nonceRef=useRef(null);
 
 
-const generateNonce=function(){var _ref6=_asyncToGenerator(function*(){
+const generateNonce=function(){var _ref7=_asyncToGenerator(function*(){
 const rawNonce=crypto.randomUUID();
 const encoder=new TextEncoder();
 const hashBuffer=yield crypto.subtle.digest('SHA-256',encoder.encode(rawNonce));
 const hashArray=Array.from(new Uint8Array(hashBuffer));
 const hashedNonce=hashArray.map((b)=>b.toString(16).padStart(2,'0')).join('');
 return{rawNonce,hashedNonce};
-});return function generateNonce(){return _ref6.apply(this,arguments);};}();
+});return function generateNonce(){return _ref7.apply(this,arguments);};}();
 
 
 useEffect(()=>{
@@ -4273,29 +4250,40 @@ setLoading(false);
 useEffect(()=>{window._handleGoogleCredentialCRM=handleCredentialResponse;},[]);
 
 return(
-React.createElement("div",{style:{minHeight:"100vh",background:"#f0f4ff",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Noto Sans JP',sans-serif"}},
-React.createElement("div",{style:{position:"fixed",top:"20%",left:"50%",transform:"translateX(-50%)",width:600,height:600,background:"radial-gradient(circle,#DC262608 0%,transparent 70%)",pointerEvents:"none"}}),
-React.createElement("div",{style:{width:400}},
-React.createElement("div",{style:{textAlign:"center",marginBottom:40}},
-React.createElement("div",{style:{display:"inline-flex",alignItems:"center",justifyContent:"center",width:56,height:56,background:"#fff",borderRadius:16,marginBottom:16,boxShadow:"0 4px 20px #00000012"}},
-React.createElement(GakusapoLogo,{size:40})
-),
-React.createElement("div",{style:{fontSize:22,fontWeight:800,color:"#0f172a",letterSpacing:"-0.02em"}},"Gakusapo CRM"),
-React.createElement("div",{style:{fontSize:12,color:"#64748b",marginTop:4,letterSpacing:"0.06em"}},"SALES MANAGEMENT SYSTEM")
-),
+React.createElement("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)",fontFamily:"'Noto Sans JP',sans-serif"}},
+React.createElement("div",{style:{background:"rgba(255,255,255,0.97)",borderRadius:20,padding:"48px 40px",maxWidth:440,width:"90%",textAlign:"center",boxShadow:"0 25px 80px rgba(0,0,0,0.4)"}},
 
-React.createElement("div",{style:{background:"#fff",border:"1px solid #e8edf5",borderRadius:16,padding:"36px 32px"}},
+React.createElement("div",{style:{width:80,height:80,margin:"0 auto 20px",display:"flex",alignItems:"center",justifyContent:"center"}},
+React.createElement(GakusapoLogo,{size:64})
+),
+React.createElement("h1",{style:{fontSize:22,fontWeight:700,marginBottom:6,color:"#1e293b"}},"Gakusapo CRM"
+
+),
+React.createElement("p",{style:{color:"#64748b",fontSize:14,marginBottom:32}},"Gakusapo \u30E1\u30F3\u30D0\u30FC\u5C02\u7528"
+
+),
 
 
 !devMode&&
 React.createElement(React.Fragment,null,
-React.createElement("div",{style:{display:"flex",justifyContent:"center",marginBottom:16}},
-React.createElement("div",{ref:btnRef,style:{minHeight:44}})
+React.createElement("div",{style:{display:"flex",justifyContent:"center",marginBottom:16,minHeight:44}},
+React.createElement("div",{ref:btnRef})
 ),
-loading&&React.createElement("div",{style:{textAlign:"center",fontSize:12,color:"#64748b",marginBottom:12}},"\u30ED\u30B0\u30A4\u30F3\u4E2D..."),
-error&&React.createElement("div",{style:{textAlign:"center",fontSize:12,color:"#dc2626",marginBottom:12,padding:"8px 12px",background:"#fef2f2",borderRadius:8}},error),
-!gsiReady&&!loading&&React.createElement("div",{style:{textAlign:"center",fontSize:11,color:"#94a3b8",marginBottom:12}},"Google\u8A8D\u8A3C\u3092\u6E96\u5099\u4E2D..."),
-React.createElement("div",{style:{borderTop:"1px solid #e8edf5",marginTop:20,paddingTop:16,textAlign:"center"}},
+loading&&
+React.createElement("div",{style:{color:"#3b82f6",display:"flex",alignItems:"center",justifyContent:"center",gap:8,margin:"12px 0",fontSize:13}},"\u8A8D\u8A3C\u4E2D..."
+
+),
+
+error&&
+React.createElement("div",{style:{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:12,margin:"12px 0",color:"#dc2626",fontSize:13,textAlign:"left"}},
+React.createElement("strong",null,"\u26A0 \u30A8\u30E9\u30FC:")," ",error
+),
+
+React.createElement("p",{style:{color:"#94a3b8",fontSize:11,marginTop:28,lineHeight:"1.5"}},"\u30E1\u30F3\u30D0\u30FC\u30B7\u30FC\u30C8\u306B\u767B\u9332\u3055\u308C\u305FGoogle\u30A2\u30AB\u30A6\u30F3\u30C8\u3067\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044",
+React.createElement("br",null),"\u203B \u767B\u9332\u304C\u306A\u3044\u5834\u5408\u306F\u7BA1\u7406\u8005\u306B\u304A\u554F\u3044\u5408\u308F\u305B\u304F\u3060\u3055\u3044"
+
+),
+React.createElement("div",{style:{borderTop:"1px solid #e2e8f0",marginTop:24,paddingTop:16}},
 React.createElement("button",{onClick:()=>setDevMode(true),style:{background:"none",border:"none",color:"#94a3b8",fontSize:11,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u958B\u767A\u30E2\u30FC\u30C9\u3067\u5165\u308B \u2192"
 
 )
@@ -4311,7 +4299,7 @@ React.createElement("div",{style:{background:"#f59e0b22",border:"1px solid #f59e
 
 )
 ),
-React.createElement("div",{style:{fontSize:12,color:"#64748b",marginBottom:12,fontWeight:600}},"\u30ED\u30B0\u30A4\u30F3\u30E6\u30FC\u30B6\u30FC\u3092\u9078\u629E"),
+React.createElement("div",{style:{fontSize:12,color:"#64748b",marginBottom:12,fontWeight:600,textAlign:"left"}},"\u30ED\u30B0\u30A4\u30F3\u30E6\u30FC\u30B6\u30FC\u3092\u9078\u629E"),
 React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8,marginBottom:24}},
 DEV_USERS.map((u,i)=>
 React.createElement("button",{key:i,onClick:()=>setSelected(i),style:{
@@ -4335,14 +4323,13 @@ React.createElement("button",{onClick:()=>onLogin({...DEV_USERS[selected],email:
 style:{width:"100%",background:"#DC2626",border:"none",borderRadius:10,color:"#fff",fontSize:14,fontWeight:700,padding:"14px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u3053\u306E\u30E6\u30FC\u30B6\u30FC\u3067\u30ED\u30B0\u30A4\u30F3 \u2192"
 
 ),
-React.createElement("div",{style:{borderTop:"1px solid #e8edf5",marginTop:16,paddingTop:12,textAlign:"center"}},
+React.createElement("div",{style:{borderTop:"1px solid #e2e8f0",marginTop:16,paddingTop:12}},
 React.createElement("button",{onClick:()=>setDevMode(false),style:{background:"none",border:"none",color:"#94a3b8",fontSize:11,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u2190 Google\u8A8D\u8A3C\u306B\u623B\u308B"
 
 )
 )
 )
 
-)
 )
 ));
 
@@ -9363,10 +9350,10 @@ React.createElement("div",{style:{fontSize:14,color:"#64748b"}},"\u8A8D\u8A3C\u6
 if(!currentUser)return React.createElement(LoginScreen,{onLogin:setCurrentUser});
 return React.createElement(Dashboard,{user:currentUser,onLogout:handleLogout});
 }
-
-
-const root=ReactDOM.createRoot(document.getElementById('root'));
-root.render(React.createElement(App));
+  </script>
+  <script>
+    var _root = ReactDOM.createRoot(document.getElementById('root'));
+    _root.render(React.createElement(App));
   </script>
 </body>
 </html>
