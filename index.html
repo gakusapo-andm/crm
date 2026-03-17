@@ -3487,7 +3487,8 @@ r.nextAction?.date||"",r.nextAction?.content||""].
 map((v)=>'"'+String(v).replace(/"/g,'""')+'"');
 });
 const bom="\uFEFF";
-const csv=bom+[headers.map((h)=>'"'+h+'"'),...rows].map((r)=>r.join(",")).join("\n");
+const csv=bom+[headers.map((h)=>'"'+h+'"'),...rows].map((r)=>r.join(",")).join("
+");
 const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
 const url=URL.createObjectURL(blob);
 const a=document.createElement("a");
@@ -5515,7 +5516,8 @@ statusLabel,
 getSourceBadgeDyn(r.source)?.label||""];
 
 });
-const csv=[headers,...rows].map((r)=>r.map((c)=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+const csv=[headers,...rows].map((r)=>r.map((c)=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("
+");
 const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
 const url=URL.createObjectURL(blob);
 const prefLabel=filterPrefecture!=="all"?`_${filterPrefecture}`:"";
