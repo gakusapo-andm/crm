@@ -17,6 +17,12 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <!-- Recharts -->
   <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <!-- Supabase: module scriptで先読み→グローバルに公開 -->
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+    window._supabaseCreateClient = createClient;
+    window.dispatchEvent(new Event('supabase-ready'));
+  </script>
 </head>
 <body>
   <div id="root"></div>
@@ -176,19 +182,28 @@ function useResponsive() {
 const SUPA_URL  = "https://vsikhvtlizshrlpyjlgm.supabase.co";
 const SUPA_ANON = "sb_publishable_Tu2UxhRYKM56vgpNkdkXIA_ZEgtKepN";
 
-// Supabase クライアントを CDN から動的ロード（Promise で確実に待機可能）
+// Supabase クライアント初期化（module scriptで先読み済みのcreateClientを使用）
 let _supabase = null;
-const _supabaseReady = (async () => {
-  try {
-    const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm");
-    _supabase = createClient(SUPA_URL, SUPA_ANON);
-    console.log("Supabase 接続完了（統合DB v13）");
-    return _supabase;
-  } catch(e) {
-    console.warn("Supabase 読み込み失敗（オフラインモードで動作）:", e.message);
-    return null;
+const _supabaseReady = new Promise((resolve) => {
+  function tryInit() {
+    if (window._supabaseCreateClient) {
+      try {
+        _supabase = window._supabaseCreateClient(SUPA_URL, SUPA_ANON);
+        console.log("Supabase 接続完了（統合DB v13）");
+        resolve(_supabase);
+      } catch(e) {
+        console.warn("Supabase 初期化失敗:", e.message);
+        resolve(null);
+      }
+    } else {
+      // module scriptがまだ実行されていない場合は待機
+      window.addEventListener('supabase-ready', tryInit, { once: true });
+      // フォールバック: 5秒後にタイムアウト
+      setTimeout(() => { if (!_supabase) { console.warn("Supabase ロードタイムアウト"); resolve(null); } }, 5000);
+    }
   }
-})();
+  tryInit();
+});
 
 // 初期化完了を待つヘルパー（useEffect内で使用）
 async function getSupabase() {
