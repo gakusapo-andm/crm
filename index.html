@@ -7705,6 +7705,22 @@ const{isMobile,isTablet}=useResponsive();
 const[activeNav,setActiveNav]=useState(user.role==="clerk"?10:0);
 const isAdmin=user.role==="admin";
 
+
+const[customers,setCustomers]=useCustomers([]);
+
+const[allLostRecords,setAllLostRecords]=useLostRecords([]);
+const lostRequests=allLostRecords.filter((r)=>r.status==="pending");
+const lostApproved=allLostRecords.filter((r)=>r.status==="approved");
+const[recontacts,setRecontacts]=useRecontacts([]);
+
+const[teleapoLists,setTeleapoLists]=useTeleapoLists([]);
+
+const dbMembers=useMembers();
+const salesMembers=dbMembers.filter((m)=>m.role!=="clerk");
+
+const recontactSentIds=useMemo(()=>new Set(recontacts.filter((r)=>r.lostId).map((r)=>r.lostId)),[recontacts]);
+
+
 const todayStr=new Date().toISOString().slice(0,10);
 const actions=useMemo(()=>{
 const URGENT_STAGES=new Set(["④","⑤","⑥","⑦"]);
@@ -7727,25 +7743,9 @@ stage:r.stage||"①",time:r.nextAction.time||"",urgent:false
 });
 }
 });
-
 const filtered=isAdmin?items:items.filter((a)=>a.ownerName===user.name);
 return filtered.sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
 },[customers,recontacts,todayStr,isAdmin,user.name]);
-
-
-const[customers,setCustomers]=useCustomers([]);
-
-const[allLostRecords,setAllLostRecords]=useLostRecords([]);
-const lostRequests=allLostRecords.filter((r)=>r.status==="pending");
-const lostApproved=allLostRecords.filter((r)=>r.status==="approved");
-const[recontacts,setRecontacts]=useRecontacts([]);
-
-const[teleapoLists,setTeleapoLists]=useTeleapoLists([]);
-
-const dbMembers=useMembers();
-const salesMembers=dbMembers.filter((m)=>m.role!=="clerk");
-
-const recontactSentIds=useMemo(()=>new Set(recontacts.filter((r)=>r.lostId).map((r)=>r.lostId)),[recontacts]);
 
 
 const[notice,saveNotice]=useNotice();
