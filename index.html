@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gakusapo CRM v14</title>
+  <title>Gakusapo CRM v15</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -5430,6 +5430,7 @@ const[confirmDeleteLog,setConfirmDeleteLog]=useState(null);
 const[notification,setNotification]=useState(null);
 const[apoModal,setApoModal]=useState(null);
 const[apoForm,setApoForm]=useState({contact:"",title:"",email:"",apoDate:"",note:""});
+const[apoProcessing,setApoProcessing]=useState(false);
 const[bbModal,setBbModal]=useState(null);
 
 const[csvImportOpen,setCsvImportOpen]=useState(false);
@@ -5482,7 +5483,15 @@ newRows.push(newRow);
 });
 return next;
 });
-if(newRows.length>0)dbInsertTeleapoRows(newRows);
+if(newRows.length>0){
+dbInsertTeleapoRows(newRows).then(function(dbResult){
+if(dbResult&&dbResult.length===newRows.length){
+const idMap={};
+newRows.forEach(function(r,i){idMap[r.id]=dbResult[i].id;});
+setLists(function(prev){return prev.map(function(r){return idMap[r.id]?Object.assign({},r,{id:idMap[r.id]}):r;});});
+}
+});
+}
 mergedUpdates.forEach((u)=>dbUpdateTeleapoItem(u.id,u.fields));
 showNotif(`新規${newCount}件追加、${mergeCount}件マージ（ログ保持）`);
 }
@@ -5595,14 +5604,16 @@ setApoModal(item);
 setApoForm({contact:item.contact||"",title:item.title||"",email:"",apoDate:today,note:""});
 }function
 confirmApo(){return _confirmApo.apply(this,arguments);}function _confirmApo(){_confirmApo=_asyncToGenerator(function*(){
-if(!apoModal)return;
+if(!apoModal||apoProcessing)return;
+setApoProcessing(true);
+try{
 const apoId=apoModal.id;
 const apoCompany=apoModal.company;
 const apoOwner=apoModal.owner;
 const apoIndustry=apoModal.industry||"";
 const apoContact=apoForm.contact||apoModal.contact;
 
-dbRecordCall(apoId,["apo","contact"],apoModal._pendingNote||`アポ取得 ${apoForm.apoDate}`,apoOwner);
+yield dbRecordCall(apoId,["apo","contact"],apoModal._pendingNote||`アポ取得 ${apoForm.apoDate}`,apoOwner);
 
 const now2=new Date();
 const dateStr2=now2.toLocaleDateString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit"}).replace(/\//g,"-");
@@ -5617,7 +5628,8 @@ let dealResult=null;
 try{
 const sb=yield getSupabase();
 if(sb){
-const{data}=yield sb.rpc("create_deal_from_appointment",{p_teleapo_id:apoId,p_owner:apoOwner});
+const{data,error}=yield sb.rpc("create_deal_from_appointment",{p_teleapo_id:apoId,p_owner:apoOwner});
+if(error)console.error("create_deal_from_appointment error:",error);
 dealResult=data;
 }
 }catch(e){console.error("create_deal_from_appointment error:",e);}
@@ -5646,6 +5658,7 @@ companySize:urlResult?.companySize||null,
 urlError:!urlResult&&dealResult?.deal_id?true:false
 });
 showNotif(`${apoCompany} のアポを取得！顧客管理③に登録しました`,"success");
+}finally{setApoProcessing(false);}
 });return _confirmApo.apply(this,arguments);}
 
 
@@ -5816,8 +5829,8 @@ style:{width:"100%",background:"#fff",border:"1px solid #e8edf5",borderRadius:8,
 ),
 React.createElement("div",{style:{display:"flex",gap:8,marginTop:18}},
 React.createElement("button",{onClick:()=>setApoModal(null),style:{flex:1,padding:"10px",background:"#f8faff",border:"1px solid #e8edf5",borderRadius:8,color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u30AD\u30E3\u30F3\u30BB\u30EB"),
-React.createElement("button",{onClick:confirmApo,style:{flex:2,padding:"10px",background:"#1d4ed8",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}},
-React.createElement(Star,{size:13,color:"#fff"}),"\u30A2\u30DD\u53D6\u5F97\u78BA\u5B9A \u2192 \u9867\u5BA2\u7BA1\u7406\u2462\u3078\u767B\u9332"
+React.createElement("button",{onClick:confirmApo,disabled:apoProcessing,style:{flex:2,padding:"10px",background:apoProcessing?"#93c5fd":"#1d4ed8",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:apoProcessing?"not-allowed":"pointer",fontFamily:"'Noto Sans JP',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}},
+React.createElement(Star,{size:13,color:"#fff"}),apoProcessing?"\u51E6\u7406\u4E2D...":"\u30A2\u30DD\u53D6\u5F97\u78BA\u5B9A \u2192 \u9867\u5BA2\u7BA1\u7406\u2462\u3078\u767B\u9332"
 )
 )
 )
