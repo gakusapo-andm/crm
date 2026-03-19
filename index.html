@@ -1384,6 +1384,7 @@ const Ban=({size=16,color="currentColor",style={}})=>React.createElement("svg",{
 const ClipboardList=({size=16,color="currentColor",style={}})=>React.createElement(Ic,{size:size,color:color,style:style,d:["M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2","M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2","M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2","M9 12h6","M9 16h4"]});
 const Copy=({size=16,color="currentColor",style={}})=>React.createElement(Ic,{size:size,color:color,style:style,d:["M20 9H11a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2z","M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 0 2 2v1"]});
 const Mail=({size=16,color="currentColor",style={}})=>React.createElement(Ic,{size:size,color:color,style:style,d:["M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z","M22 6l-10 7L2 6"]});
+const Trash=({size=16,color="currentColor",style={}})=>React.createElement(Ic,{size:size,color:color,style:style,d:["M3 6h18","M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"]});
 
 
 
@@ -1767,7 +1768,7 @@ c.nextAction?`${c.nextAction.date} ${c.nextAction.content}`:"—"
 
 
 
-function CustomerDetailPanel({customer,onClose,onUpdate,onLostRequest,teleapoLists,onCreateTodo,user,onSyncGcal,showNotif}){
+function CustomerDetailPanel({customer,onClose,onUpdate,onDelete,onLostRequest,teleapoLists,onCreateTodo,user,onSyncGcal,showNotif}){
 const[tab,setTab]=useState(0);
 const[editing,setEditing]=useState(false);
 const[form,setForm]=useState({...customer});
@@ -1787,6 +1788,7 @@ const[clerkReqForm,setClerkReqForm]=useState({type:"document_send",memo:""});
 const[todoNotif,setTodoNotif]=useState(null);
 
 const[stageExtraTasks,setStageExtraTasks]=useState(null);
+const[confirmDelete,setConfirmDelete]=useState(false);
 
 const[preInputData,setPreInputData]=useState(null);
 const[preInputLoading,setPreInputLoading]=useState(false);
@@ -1870,16 +1872,18 @@ if(onSyncGcal)onSyncGcal(customer,actionForm);
 }
 function changeStage(newStage){
 const today=new Date().toISOString().slice(0,10);
+const STAGE_ORDER=["①","②","③","④","⑤","⑥","⑦"];
+const isRollback=STAGE_ORDER.indexOf(newStage)<STAGE_ORDER.indexOf(customer.stage);
 const updated={
 ...customer,
 stage:newStage,
-stageHistory:[...customer.stageHistory,{stage:newStage,date:today,note:"ステージ更新",by:user?.name||"自分"}]
+stageHistory:[...customer.stageHistory,{stage:newStage,date:today,note:isRollback?"ステージ巻き戻し（管理者）":"ステージ更新",by:user?.name||"自分"}]
 };
 onUpdate(updated);
 setForm({...form,stage:newStage});
 
 const AUTO_TODO_STAGES=new Set(["③","④","⑤","⑥"]);
-if(AUTO_TODO_STAGES.has(newStage)&&onCreateTodo){
+if(!isRollback&&AUTO_TODO_STAGES.has(newStage)&&onCreateTodo){
 onCreateTodo({
 customerId:customer.id,company:customer.company,
 contact:customer.contact,email:customer.email,
@@ -1972,6 +1976,13 @@ React.createElement("div",{style:{fontSize:15,fontWeight:700,color:"#0f172a",mar
 React.createElement("div",{style:{fontSize:11,color:"#64748b"}},customer.contact,"\u30FB",customer.title," \uFF0F \u62C5\u5F53:",customer.owner)
 ),
 React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6}},
+user?.role==="admin"&&onDelete&&
+React.createElement("button",{onClick:()=>setConfirmDelete(true),style:{
+background:"#ef444410",border:"1px solid #ef444422",borderRadius:6,
+color:"#ef4444",fontSize:10,fontWeight:600,padding:"4px 6px",cursor:"pointer",
+fontFamily:"'Noto Sans JP',sans-serif",whiteSpace:"nowrap"
+}},React.createElement(Trash,{size:11,color:"#ef4444"})
+),
 onCreateTodo&&user?.role!=="clerk"&&
 React.createElement("button",{onClick:()=>setShowClerkReq(true),style:{
 background:"#3b82f618",border:"1px solid #3b82f633",borderRadius:6,
@@ -2467,7 +2478,15 @@ React.createElement("div",{style:{marginTop:8}},
 React.createElement("input",{value:bbIdInput,onChange:(e)=>setBbIdInput(e.target.value.replace(/\D/g,"").slice(0,13)),placeholder:"\u4F8B: 2025001234567",maxLength:13,
 style:{...inputStyle,fontFamily:"'DM Mono',monospace",letterSpacing:"0.08em",fontSize:14,marginBottom:6}}),
 React.createElement("button",{onClick:saveBbId,disabled:bbIdInput.length!==13,style:{background:bbIdInput.length===13?"#DC2626":"#1e293b",border:"none",borderRadius:8,color:bbIdInput.length===13?"#fff":"#475569",fontSize:12,padding:"8px",width:"100%",cursor:bbIdInput.length===13?"pointer":"default",fontWeight:600,fontFamily:"'Noto Sans JP',sans-serif"}},
-bbSaved?"\u4FDD\u5B58\u3057\u307E\u3057\u305F":"\u554F\u8A3A\u756A\u53F7\u3092\u4FDD\u5B58")
+bbSaved?"\u4FDD\u5B58\u3057\u307E\u3057\u305F":"\u554F\u8A3A\u756A\u53F7\u3092\u4FDD\u5B58"),
+user?.role==="admin"&&
+React.createElement("button",{onClick:()=>{
+if(confirm("問診番号の紐付けを解除しますか？\n（BB診断データは保持されますが、CRMとの連携が切れます）")){
+onUpdate({...customer,bbId:null});setBbIdInput("");
+if(showNotif)showNotif("問診番号を解除しました","success");
+}
+},style:{marginTop:6,width:"100%",padding:"7px",background:"#fff",border:"1px solid #ef444444",borderRadius:8,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},
+React.createElement(Trash,{size:11,color:"#ef4444"})," \u7D10\u4ED8\u3051\u3092\u89E3\u9664")
 )
 )
 
@@ -2550,6 +2569,20 @@ style:{flex:1,padding:"10px",borderRadius:8,border:"none",background:"#3b82f6",
 fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",color:"#fff"}},"\u4F9D\u983C\u3092\u9001\u4FE1"
 
 )
+)
+)
+),
+
+confirmDelete&&
+React.createElement("div",{style:{position:"absolute",inset:0,background:"#00000066",display:"flex",alignItems:"center",justifyContent:"center",zIndex:40}},
+React.createElement("div",{style:{background:"#fff",borderRadius:14,padding:"24px",width:340,boxShadow:"0 8px 32px #00000020",fontFamily:"'Noto Sans JP',sans-serif"},onClick:(e)=>e.stopPropagation()},
+React.createElement("div",{style:{fontSize:15,fontWeight:700,color:"#ef4444",marginBottom:8}},"\u9867\u5BA2\u30AB\u30FC\u30C9\u3092\u524A\u9664"),
+React.createElement("div",{style:{fontSize:12,color:"#64748b",marginBottom:6}},
+React.createElement("span",{style:{fontWeight:700,color:"#0f172a"}},customer.company)," \u3092\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F"),
+React.createElement("div",{style:{fontSize:11,color:"#ef4444",marginBottom:16}},"\u203B \u3053\u306E\u64CD\u4F5C\u306F\u53D6\u308A\u6D88\u305B\u307E\u305B\u3093"),
+React.createElement("div",{style:{display:"flex",gap:8}},
+React.createElement("button",{onClick:()=>setConfirmDelete(false),style:{flex:1,padding:"10px",borderRadius:8,border:"1px solid #e8edf5",background:"#fff",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u30AD\u30E3\u30F3\u30BB\u30EB"),
+React.createElement("button",{onClick:()=>{if(onDelete){onDelete(customer.id);}setConfirmDelete(false);},style:{flex:1,padding:"10px",borderRadius:8,border:"none",background:"#ef4444",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u524A\u9664\u3059\u308B")
 )
 )
 )
@@ -4225,6 +4258,20 @@ setCustomers((cs)=>cs.map((c)=>c.id===updated.id?updated:c));
 setSelectedCustomer(updated);
 }
 
+function deleteCustomer(dealId){
+setCustomers((cs)=>cs.filter((c)=>c.id!==dealId));
+setSelectedCustomer(null);
+_asyncToGenerator(function*(){
+try{
+const sb=yield getSupabase();
+if(sb){
+yield sb.from("crm_deals").delete().eq("id",dealId);
+showNotif("\u9867\u5BA2\u30AB\u30FC\u30C9\u3092\u524A\u9664\u3057\u307E\u3057\u305F","success");
+}
+}catch(e){console.error("delete deal error:",e);}
+})();
+}
+
 function importCSV(newRows){
 setCustomers((cs)=>[...cs,...newRows]);
 }
@@ -4307,6 +4354,7 @@ React.createElement(CustomerDetailPanel,{
 customer:selectedCustomer,
 onClose:()=>setSelectedCustomer(null),
 onUpdate:updateCustomer,
+onDelete:deleteCustomer,
 onLostRequest:handleLostRequest,
 teleapoLists:teleapoLists||[],
 onCreateTodo:onCreateTodo,
@@ -5721,6 +5769,22 @@ if(error)console.error("create_deal_from_appointment error:",error);
 dealResult=data;
 }
 }catch(e){console.error("create_deal_from_appointment error:",e);}
+
+if(dealResult?.deal_id){
+try{
+const sb=yield getSupabase();
+if(sb){
+const{data:freshDeal}=yield sb.from("crm_deals").select("*, companies(*)").eq("id",dealResult.deal_id).single();
+if(freshDeal){
+const newCustomer=rowToCustomer(freshDeal);
+setCustomers((cs)=>{
+const exists=cs.some((c)=>c.id===freshDeal.id);
+return exists?cs.map((c)=>c.id===freshDeal.id?newCustomer:c):[...cs,newCustomer];
+});
+}
+}
+}catch(e){console.error("deal fetch for immediate update error:",e);}
+}
 setApoModal(null);
 
 let urlResult=null;
@@ -6433,6 +6497,22 @@ isExpanded&&
 React.createElement("tr",null,
 React.createElement("td",{colSpan:99,style:{background:"#f8faff",borderBottom:"1px solid #e8edf5",padding:"0 14px 16px"}},
 React.createElement("div",{style:{paddingTop:14,display:"flex",flexDirection:"column",gap:14}},
+
+isAdmin&&
+React.createElement("div",{style:{display:"flex",justifyContent:"flex-end"}},
+React.createElement("button",{onClick:(e)=>{e.stopPropagation();
+if(confirm(item.company+" をテレアポリストから削除しますか？\n\n※ 架電ログも削除されます")){
+setLists((ls)=>ls.filter((r)=>r.id!==item.id));
+_asyncToGenerator(function*(){
+try{const sb=yield getSupabase();
+if(sb){yield sb.from("teleapo_calls").delete().eq("teleapo_id",item.id);yield sb.from("teleapo_lists").delete().eq("id",item.id);}
+}catch(err){console.error("teleapo delete error:",err);}
+})();
+showNotif(item.company+" を削除しました","success");
+}
+},style:{background:"#ef444410",border:"1px solid #ef444422",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,padding:"5px 10px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",display:"flex",alignItems:"center",gap:4}},
+React.createElement(Trash,{size:12,color:"#ef4444"}),"\u3053\u306E\u884C\u3092\u524A\u9664")
+),
 
 
 React.createElement("div",{style:{background:"#fff",border:"1px solid #e8edf5",borderRadius:10,padding:"14px 16px"}},
