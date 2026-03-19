@@ -1383,6 +1383,7 @@ const AlertTriangle=({size=16,color="currentColor",style={}})=>React.createEleme
 const Ban=({size=16,color="currentColor",style={}})=>React.createElement("svg",{width:size,height:size,viewBox:"0 0 24 24",fill:"none",stroke:color,strokeWidth:2,strokeLinecap:"round",strokeLinejoin:"round",style:style},React.createElement("circle",{cx:"12",cy:"12",r:"10"}),React.createElement("path",{d:"M4.93 4.93l14.14 14.14"}));
 const ClipboardList=({size=16,color="currentColor",style={}})=>React.createElement(Ic,{size:size,color:color,style:style,d:["M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2","M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2","M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2","M9 12h6","M9 16h4"]});
 const Copy=({size=16,color="currentColor",style={}})=>React.createElement(Ic,{size:size,color:color,style:style,d:["M20 9H11a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2z","M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 0 2 2v1"]});
+const Mail=({size=16,color="currentColor",style={}})=>React.createElement(Ic,{size:size,color:color,style:style,d:["M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z","M22 6l-10 7L2 6"]});
 
 
 
@@ -1766,7 +1767,7 @@ c.nextAction?`${c.nextAction.date} ${c.nextAction.content}`:"—"
 
 
 
-function CustomerDetailPanel({customer,onClose,onUpdate,onLostRequest,teleapoLists,onCreateTodo,user,onSyncGcal}){
+function CustomerDetailPanel({customer,onClose,onUpdate,onLostRequest,teleapoLists,onCreateTodo,user,onSyncGcal,showNotif}){
 const[tab,setTab]=useState(0);
 const[editing,setEditing]=useState(false);
 const[form,setForm]=useState({...customer});
@@ -1786,6 +1787,39 @@ const[clerkReqForm,setClerkReqForm]=useState({type:"document_send",memo:""});
 const[todoNotif,setTodoNotif]=useState(null);
 
 const[stageExtraTasks,setStageExtraTasks]=useState(null);
+
+const[preInputData,setPreInputData]=useState(null);
+const[preInputLoading,setPreInputLoading]=useState(false);
+const[bbUrlIssuing,setBbUrlIssuing]=useState(false);
+
+const bbUrls=useMemo(()=>{
+if(!customer.bbId)return null;
+const token=generatePreInputToken(customer.bbId);
+const size=preInputData?.input_data?.companySize||"medium";
+const base="https://gakusapo-andm.github.io/bb-shindan/customer/";
+return{
+staffUrl:`${base}?id=${encodeURIComponent(customer.bbId)}&tk=${token}&size=${size}`,
+execUrl:`${base}?id=${encodeURIComponent(customer.bbId)}&tk=${token}&size=${size}&role=exec`
+};
+},[customer.bbId,preInputData]);
+
+useEffect(()=>{
+if(!customer.bbId)return;
+let cancelled=false;
+setPreInputLoading(true);
+getSupabase().then((sb)=>{
+if(!sb||cancelled)return;
+sb.from("pre_inputs").select("*").eq("customer_id",customer.bbId).maybeSingle().then(({data})=>{
+if(!cancelled){setPreInputData(data||null);setPreInputLoading(false);}
+});
+const ch=sb.channel("pre-input-"+customer.bbId).
+on("postgres_changes",{event:"*",schema:"public",table:"pre_inputs",filter:"customer_id=eq."+customer.bbId},(payload)=>{
+if(!cancelled){setPreInputData(payload.new||null);}
+}).subscribe();
+return()=>{cancelled=true;sb.removeChannel(ch);};
+});
+return()=>{cancelled=true;};
+},[customer.bbId]);
 
 
 const CLERK_TASK_TYPES=[
@@ -2373,74 +2407,89 @@ React.createElement(Save,{size:13}),"RA\u30B9\u30B3\u30A2\u3092\u4FDD\u5B58"
 tab===5&&
 React.createElement("div",null,
 React.createElement("div",{style:{fontSize:12,color:"#64748b",fontWeight:600,marginBottom:4}},"BB\u8A3A\u65AD\u9023\u643A"),
-React.createElement("div",{style:{fontSize:11,color:"#334155",marginBottom:20,lineHeight:1.7}},"\u63A1\u7528\u30D6\u30E9\u30C3\u30AF\u30DC\u30C3\u30AF\u30B9\u8A3A\u65AD\u306E\u554F\u8A3A\u756A\u53F7\uFF0813\u6841\uFF09\u3092\u7D10\u4ED8\u3051\u307E\u3059\u3002",
-React.createElement("br",null),"\u767B\u9332\u5F8C\u306F\u3053\u3053\u304B\u3089\u8A3A\u65AD\u30EC\u30DD\u30FC\u30C8\u3092\u53C2\u7167\u3067\u304D\u307E\u3059\u3002"
-
-),
-
+React.createElement("div",{style:{fontSize:11,color:"#334155",marginBottom:16,lineHeight:1.7}},"\u63A1\u7528\u30D6\u30E9\u30C3\u30AF\u30DC\u30C3\u30AF\u30B9\u8A3A\u65AD\u306E\u4E8B\u524D\u554F\u8A3A\u30FBBB\u8A3A\u65AD\u3092\u7BA1\u7406\u3057\u307E\u3059\u3002"),
 
 customer.bbId?
-React.createElement("div",{style:{background:"#22c55e11",border:"1px solid #22c55e33",borderRadius:10,padding:"14px 16px",marginBottom:20}},
-React.createElement("div",{style:{fontSize:10,color:"#22c55e",fontWeight:600,letterSpacing:"0.06em",marginBottom:6}},React.createElement(Check,{size:11,color:"#22c55e"}),"BB\u8A3A\u65AD \u7D10\u4ED8\u3051\u6E08\u307F"),
-React.createElement("div",{style:{fontSize:18,fontWeight:800,color:"#22c55e",fontFamily:"'DM Mono',monospace",letterSpacing:"0.08em",marginBottom:8}},
-customer.bbId
-),
-React.createElement("div",{style:{display:"flex",gap:8}},
-React.createElement("button",{onClick:()=>{navigator.clipboard?.writeText(customer.bbId);},style:{
-flex:1,background:"none",border:"1px solid #22c55e44",borderRadius:6,
-color:"#22c55e",fontSize:11,padding:"6px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"
-}},"\u554F\u8A3A\u756A\u53F7\u3092\u30B3\u30D4\u30FC"
+React.createElement(React.Fragment,null,
 
+React.createElement("div",{style:{background:"#22c55e11",border:"1px solid #22c55e33",borderRadius:10,padding:"14px 16px",marginBottom:14}},
+React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}},
+React.createElement("div",{style:{fontSize:10,color:"#22c55e",fontWeight:600,letterSpacing:"0.06em",display:"flex",alignItems:"center",gap:4}},React.createElement(Check,{size:11,color:"#22c55e"}),"BB\u8A3A\u65AD \u7D10\u4ED8\u3051\u6E08\u307F"),
+React.createElement("button",{onClick:()=>{navigator.clipboard?.writeText(customer.bbId);showNotif&&showNotif("問診番号コピー済み","success");},style:{background:"none",border:"1px solid #22c55e44",borderRadius:6,color:"#22c55e",fontSize:10,padding:"3px 8px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"No.\u30B3\u30D4\u30FC")
 ),
-React.createElement("button",{onClick:()=>setBbIdInput(customer.bbId||""),style:{
-flex:1,background:"none",border:"1px solid #e8edf5",borderRadius:6,
-color:"#64748b",fontSize:11,padding:"6px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"
-}},"\u5909\u66F4\u3059\u308B"
+React.createElement("div",{style:{fontSize:18,fontWeight:800,color:"#22c55e",fontFamily:"'DM Mono',monospace",letterSpacing:"0.08em"}},customer.bbId)
+),
 
+
+(()=>{
+const statusVal=preInputData?.status||null;
+const STATUS_CONFIG={"未開始":{bg:"#f59e0b11",border:"#f59e0b33",color:"#f59e0b",icon:"\u23F3",label:"\u672A\u56DE\u7B54"},"入力中":{bg:"#3b82f611",border:"#3b82f633",color:"#3b82f6",icon:"\u270F\uFE0F",label:"\u56DE\u7B54\u4E2D"},"完了":{bg:"#22c55e11",border:"#22c55e33",color:"#22c55e",icon:"\u2705",label:"\u56DE\u7B54\u5B8C\u4E86"}};
+const cfg=statusVal?STATUS_CONFIG[statusVal]:null;
+return React.createElement("div",{style:{background:cfg?.bg||"#f8faff",border:"1px solid "+(cfg?.border||"#e8edf5"),borderRadius:10,padding:"12px 16px",marginBottom:14}},
+React.createElement("div",{style:{fontSize:11,fontWeight:600,color:cfg?.color||"#64748b",marginBottom:4}},"\u4E8B\u524D\u554F\u8A3A\u30B9\u30C6\u30FC\u30BF\u30B9"),
+preInputLoading?
+React.createElement("div",{style:{fontSize:12,color:"#94a3b8"}},"\u8AAD\u307F\u8FBC\u307F\u4E2D..."):
+statusVal?
+React.createElement("div",{style:{fontSize:14,fontWeight:700,color:cfg?.color||"#64748b",display:"flex",alignItems:"center",gap:6}},cfg?.icon||"",cfg?.label||statusVal):
+React.createElement("div",{style:{fontSize:12,color:"#94a3b8"}},"\u4E8B\u524D\u554F\u8A3A\u304C\u767A\u884C\u3055\u308C\u3066\u3044\u306A\u3044\u304B\u3001\u307E\u3060\u56DE\u7B54\u304C\u3042\u308A\u307E\u305B\u3093")
+);
+})(),
+
+
+bbUrls&&
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}},
+
+React.createElement("div",{style:{background:"#eef2ff",border:"1px solid #c7d2fe",borderRadius:10,padding:"12px 14px"}},
+React.createElement("div",{style:{fontSize:11,fontWeight:700,color:"#4f46e5",marginBottom:6}},"\u62C5\u5F53\u8005\u7528URL"),
+React.createElement("div",{style:{fontSize:9,color:"#6366f1",marginBottom:8,wordBreak:"break-all",lineHeight:"1.4",maxHeight:36,overflow:"hidden"}},bbUrls.staffUrl),
+React.createElement("button",{onClick:()=>{
+navigator.clipboard.writeText(bbUrls.staffUrl).then(()=>{var n=typeof showNotif==="function"?showNotif:null;if(n)n("担当者用URLコピー済み","success");});
+},style:{width:"100%",padding:"8px",background:"#4f46e5",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}},
+React.createElement(Copy,{size:12}),"\u62C5\u5F53\u8005URL")
+),
+
+React.createElement("div",{style:{background:"#faf5ff",border:"1px solid #e9d5ff",borderRadius:10,padding:"12px 14px"}},
+React.createElement("div",{style:{fontSize:11,fontWeight:700,color:"#7c3aed",marginBottom:6}},"\u4E0A\u5C64\u90E8\u7528URL"),
+React.createElement("div",{style:{fontSize:9,color:"#8b5cf6",marginBottom:8,wordBreak:"break-all",lineHeight:"1.4",maxHeight:36,overflow:"hidden"}},bbUrls.execUrl),
+React.createElement("button",{onClick:()=>{
+navigator.clipboard.writeText(bbUrls.execUrl).then(()=>{var n=typeof showNotif==="function"?showNotif:null;if(n)n("上層部用URLコピー済み","success");});
+},style:{width:"100%",padding:"8px",background:"#7c3aed",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}},
+React.createElement(Copy,{size:12}),"\u4E0A\u5C64\u90E8URL")
+)
+),
+
+React.createElement("div",{style:{fontSize:10,color:"#94a3b8",marginBottom:14}},"\u203B URL\u3092\u62C5\u5F53\u8005\u30FB\u4E0A\u5C64\u90E8\u306B\u30E1\u30FC\u30EB\u9001\u4ED8\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u56DE\u7B54\u306F\u81EA\u52D5\u3067\u53CD\u6620\u3055\u308C\u307E\u3059\u3002"),
+
+
+React.createElement("details",{style:{marginBottom:14}},
+React.createElement("summary",{style:{fontSize:11,color:"#64748b",cursor:"pointer",userSelect:"none"}},"\u554F\u8A3A\u756A\u53F7\u3092\u5909\u66F4"),
+React.createElement("div",{style:{marginTop:8}},
+React.createElement("input",{value:bbIdInput,onChange:(e)=>setBbIdInput(e.target.value.replace(/\D/g,"").slice(0,13)),placeholder:"\u4F8B: 2025001234567",maxLength:13,
+style:{...inputStyle,fontFamily:"'DM Mono',monospace",letterSpacing:"0.08em",fontSize:14,marginBottom:6}}),
+React.createElement("button",{onClick:saveBbId,disabled:bbIdInput.length!==13,style:{background:bbIdInput.length===13?"#DC2626":"#1e293b",border:"none",borderRadius:8,color:bbIdInput.length===13?"#fff":"#475569",fontSize:12,padding:"8px",width:"100%",cursor:bbIdInput.length===13?"pointer":"default",fontWeight:600,fontFamily:"'Noto Sans JP',sans-serif"}},
+bbSaved?"\u4FDD\u5B58\u3057\u307E\u3057\u305F":"\u554F\u8A3A\u756A\u53F7\u3092\u4FDD\u5B58")
 )
 )
+
 ):
 
-React.createElement("div",{style:{background:"#f59e0b11",border:"1px solid #f59e0b33",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:11,color:"#f59e0b"}},"\u307E\u3060BB\u8A3A\u65AD\u3068\u7D10\u4ED8\u3051\u3055\u308C\u3066\u3044\u307E\u305B\u3093"
 
-),
-
-
+React.createElement(React.Fragment,null,
+React.createElement("div",{style:{background:"#f59e0b11",border:"1px solid #f59e0b33",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:11,color:"#f59e0b"}},"\u307E\u3060BB\u8A3A\u65AD\u3068\u7D10\u4ED8\u3051\u3055\u308C\u3066\u3044\u307E\u305B\u3093"),
 
 React.createElement("div",{style:{marginBottom:12}},
 React.createElement("label",{style:labelStyle},"\u554F\u8A3A\u756A\u53F7\uFF0813\u6841\uFF09"),
-React.createElement("input",{
-value:bbIdInput,
-onChange:(e)=>setBbIdInput(e.target.value.replace(/\D/g,"").slice(0,13)),
-placeholder:"\u4F8B: 2025001234567",
-maxLength:13,
-style:{...inputStyle,fontFamily:"'DM Mono',monospace",letterSpacing:"0.08em",fontSize:14}}
+React.createElement("input",{value:bbIdInput,onChange:(e)=>setBbIdInput(e.target.value.replace(/\D/g,"").slice(0,13)),placeholder:"\u4F8B: 2025001234567",maxLength:13,
+style:{...inputStyle,fontFamily:"'DM Mono',monospace",letterSpacing:"0.08em",fontSize:14}}),
+React.createElement("div",{style:{fontSize:10,color:"#334155",marginTop:4,textAlign:"right"}},bbIdInput.length," / 13\u6841")
 ),
-React.createElement("div",{style:{fontSize:10,color:"#334155",marginTop:4,textAlign:"right"}},
-bbIdInput.length," / 13\u6841"
-)
-),
+React.createElement("button",{onClick:saveBbId,disabled:bbIdInput.length!==13,style:{background:bbIdInput.length===13?"#DC2626":"#1e293b",border:"none",borderRadius:8,color:bbIdInput.length===13?"#fff":"#475569",fontSize:13,padding:"10px",width:"100%",cursor:bbIdInput.length===13?"pointer":"default",fontWeight:600,fontFamily:"'Noto Sans JP',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}},
+React.createElement(Save,{size:13}),bbSaved?"\u4FDD\u5B58\u3057\u307E\u3057\u305F":"\u554F\u8A3A\u756A\u53F7\u3092\u4FDD\u5B58"),
 
-React.createElement("button",{onClick:saveBbId,disabled:bbIdInput.length!==13,
-style:{
-background:bbIdInput.length===13?"#DC2626":"#1e293b",
-border:"none",borderRadius:8,color:bbIdInput.length===13?"#fff":"#475569",
-fontSize:13,padding:"10px",width:"100%",cursor:bbIdInput.length===13?"pointer":"default",
-fontWeight:600,fontFamily:"'Noto Sans JP',sans-serif",
-display:"flex",alignItems:"center",justifyContent:"center",gap:6
-}},
-React.createElement(Save,{size:13}),bbSaved?"保存しました":"問診番号を保存"
-),
-
-
-React.createElement("div",{style:{marginTop:20,padding:"12px 14px",background:"#f8faff",borderRadius:8,border:"1px solid #e8edf5",fontSize:11,color:"#64748b",lineHeight:1.9}},
-React.createElement("div",{style:{fontWeight:600,color:"#64748b",marginBottom:6}},"\u2139 \u554F\u8A3A\u756A\u53F7\u306E\u78BA\u8A8D\u65B9\u6CD5"),
-React.createElement("div",null,"\u30FBBB\u8A3A\u65AD\u30B7\u30B9\u30C6\u30E0\uFF08GAS\uFF09\u306E \u30B9\u30D7\u30EC\u30C3\u30C9\u30B7\u30FC\u30C8\u4E0A\u3067\u78BA\u8A8D\u3067\u304D\u307E\u3059"),
-React.createElement("div",null,"\u30FB\u554F\u8A3A\u756A\u53F7\u306F\u300C\u4E8B\u524D\u554F\u8A3A\u30D5\u30A9\u30FC\u30E0\u300D\u9001\u4FE1\u6642\u306B\u81EA\u52D5\u767A\u884C\u3055\u308C\u308B13\u6841\u306E\u756A\u53F7\u3067\u3059"),
-React.createElement("div",null,"\u30FB\u7D10\u4ED8\u3051\u5F8C\u306F\u62C5\u5F53\u5909\u66F4\u304C\u3042\u3063\u3066\u3082\u756A\u53F7\u306F\u5F15\u304D\u7D99\u304C\u308C\u307E\u3059")
-)
+React.createElement("div",{style:{marginTop:16,fontSize:10,color:"#94a3b8",lineHeight:1.8}},"\u203B \u30A2\u30DD\u53D6\u5F97\u6642\u306B\u81EA\u52D5\u3067\u554F\u8A3A\u756A\u53F7\u304C\u767A\u884C\u3055\u308C\u307E\u3059\u3002\u624B\u52D5\u5165\u529B\u306F\u65E2\u5B58\u756A\u53F7\u306E\u7D10\u4ED8\u3051\u306B\u4F7F\u7528\u3057\u307E\u3059\u3002")
 )
 
+)
 ),
 
 
@@ -4074,8 +4123,34 @@ const[filterStage,setFilterStage]=useState("all");
 const[filterOwner,setFilterOwner]=useState("all");
 const[lostTarget,setLostTarget]=useState(null);
 const[showNewModal,setShowNewModal]=useState(false);
+const[cmpNotif,setCmpNotif]=useState(null);
+function showNotif(msg,type){setCmpNotif({msg,type:type||"info"});setTimeout(()=>setCmpNotif(null),4000);}
 const EMPTY_NEW={company:"",contact:"",title:"",email:"",phone:"",address:"",industry:"",employees:"",revenue:"",url:"",source:"",owner:user.name,prefecture:"",stage:"①"};
 const[newForm,setNewForm]=useState(EMPTY_NEW);
+
+
+useEffect(()=>{
+let cancelled=false;
+getSupabase().then((sb)=>{
+if(!sb||cancelled)return;
+const ch=sb.channel("pre-inputs-notif-rt").
+on("postgres_changes",{event:"UPDATE",schema:"public",table:"pre_inputs"},(payload)=>{
+if(cancelled)return;
+const newStatus=payload.new?.status;
+const custId=payload.new?.customer_id;
+if(!custId)return;
+const deal=customers.find((c)=>c.bbId===custId);
+const compName=deal?.company||custId;
+if(newStatus==="完了"){
+showNotif(`${compName} が事前問診を完了しました！`,"success");
+}else if(newStatus==="入力中"&&payload.old?.status==="未開始"){
+showNotif(`${compName} が事前問診の回答を開始しました`,"info");
+}
+}).subscribe();
+return()=>{cancelled=true;sb.removeChannel(ch);};
+});
+return()=>{cancelled=true;};
+},[customers]);
 
 
 useEffect(()=>{
@@ -4236,7 +4311,8 @@ onLostRequest:handleLostRequest,
 teleapoLists:teleapoLists||[],
 onCreateTodo:onCreateTodo,
 user:user,
-onSyncGcal:onSyncGcal}
+onSyncGcal:onSyncGcal,
+showNotif:showNotif}
 ),
 
 
@@ -4329,7 +4405,17 @@ React.createElement(LostRequestModal,{
 customer:lostTarget,
 onSubmit:submitLostRequest,
 onClose:()=>setLostTarget(null)}
-)
+),
+
+cmpNotif&&
+React.createElement("div",{style:{position:"fixed",top:24,right:24,zIndex:9999,
+background:cmpNotif.type==="success"?"#dcfce7":"#eff6ff",
+border:"1px solid "+(cmpNotif.type==="success"?"#22c55e":"#3b82f6"),
+borderRadius:12,padding:"12px 20px",fontSize:13,fontWeight:600,
+color:cmpNotif.type==="success"?"#15803d":"#1d4ed8",
+boxShadow:"0 8px 30px #00000015",maxWidth:400,
+animation:"fadeIn 0.3s"}},
+cmpNotif.msg)
 
 )
 ));
@@ -5432,6 +5518,8 @@ const[apoModal,setApoModal]=useState(null);
 const[apoForm,setApoForm]=useState({contact:"",title:"",email:"",apoDate:"",note:""});
 const[apoProcessing,setApoProcessing]=useState(false);
 const[bbModal,setBbModal]=useState(null);
+const[bbClerkMemo,setBbClerkMemo]=useState("");
+const[bbClerkSent,setBbClerkSent]=useState(false);
 
 const[csvImportOpen,setCsvImportOpen]=useState(false);
 
@@ -5647,13 +5735,13 @@ industry:apoIndustry
 }catch(e){console.error("issuePreInputUrls error:",e);}
 }
 
+setBbClerkMemo("");setBbClerkSent(false);
 setBbModal({
 company:apoCompany,contact:apoContact,teleapoId:apoId,
+email:apoForm.email||"",apoDate:apoForm.apoDate||"",owner:apoOwner,
 dealId:dealResult?.deal_id||null,
 companyId:dealResult?.company_id||null,
 inquiryNo:urlResult?.inquiryNo||null,
-staffUrl:urlResult?.staffUrl||null,
-execUrl:urlResult?.execUrl||null,
 companySize:urlResult?.companySize||null,
 urlError:!urlResult&&dealResult?.deal_id?true:false
 });
@@ -5841,70 +5929,81 @@ React.createElement(Star,{size:13,color:"#fff"}),apoProcessing?"\u51E6\u7406\u4E
 bbModal&&
 React.createElement("div",{style:{position:"fixed",inset:0,background:"#00000088",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center"},
 onClick:(e)=>{if(e.target===e.currentTarget)setBbModal(null);}},
-React.createElement("div",{style:{background:"#fff",border:"1px solid #a78bfa44",borderRadius:16,padding:"28px 32px",width:520,boxShadow:"0 20px 60px #00000022",maxWidth:"90vw"}},
-React.createElement("div",{style:{fontSize:15,fontWeight:700,color:"#a78bfa",marginBottom:4,display:"flex",alignItems:"center",gap:8}},
-React.createElement(Star,{size:16,color:"#a78bfa"}),"BB\u8A3A\u65AD \u9023\u643A"
+React.createElement("div",{style:{background:"#fff",border:"1px solid #6366f144",borderRadius:16,padding:"28px 32px",width:500,boxShadow:"0 20px 60px #00000022",maxWidth:"90vw"}},
+React.createElement("div",{style:{fontSize:15,fontWeight:700,color:"#4f46e5",marginBottom:4,display:"flex",alignItems:"center",gap:8}},
+React.createElement(Check,{size:16,color:"#22c55e"}),"\u30A2\u30DD\u53D6\u5F97\u5B8C\u4E86"
 ),
-React.createElement("div",{style:{fontSize:12,color:"#64748b",marginBottom:18}},bbModal.company,"\uFF08",bbModal.contact,"\uFF09\u306E\u30A2\u30DD\u304C\u78BA\u5B9A"),
+React.createElement("div",{style:{fontSize:12,color:"#64748b",marginBottom:16}},bbModal.company,"\uFF08",bbModal.contact,"\uFF09"),
+
 React.createElement("div",{style:{background:"#15803d22",border:"1px solid #22c55e44",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#22c55e",display:"flex",alignItems:"center",gap:8}},
-React.createElement(Check,{size:13,color:"#22c55e"}),"\u9867\u5BA2\u7BA1\u7406\u30DA\u30FC\u30B8\u306E\u30B9\u30C6\u30FC\u30B8\u2462\u306B\u81EA\u52D5\u767B\u9332\u3055\u308C\u307E\u3057\u305F"
+React.createElement(Check,{size:13,color:"#22c55e"}),"\u898B\u8FBC\u5BA2\u7BA1\u7406\u30DC\u30FC\u30C9\u306E\u30B9\u30C6\u30FC\u30B8\u2462\u306B\u767B\u9332\u3055\u308C\u307E\u3057\u305F"
 ),
 
-
-bbModal.staffUrl&&
-React.createElement(React.Fragment,null,
-React.createElement("div",{style:{fontSize:11,color:"#64748b",marginBottom:4,fontWeight:600}},"\u554F\u3044\u5408\u308F\u305BNo: ",
-React.createElement("span",{style:{fontFamily:"'DM Mono',monospace",color:"#0f172a"}},bbModal.inquiryNo),
-React.createElement("span",{style:{marginLeft:8,fontSize:10,color:"#94a3b8"}},"\u898F\u6A21: ",bbModal.companySize)
+bbModal.inquiryNo&&
+React.createElement("div",{style:{background:"#eef2ff",border:"1px solid #c7d2fe",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,display:"flex",alignItems:"center",gap:8}},
+React.createElement("span",{style:{color:"#64748b"}},"\u554F\u8A3A\u756A\u53F7:"),
+React.createElement("span",{style:{fontFamily:"'DM Mono',monospace",color:"#4f46e5",fontWeight:700,fontSize:14}},bbModal.inquiryNo)
 ),
-React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}},
-
-React.createElement("div",{style:{background:"#eef2ff",border:"1px solid #c7d2fe",borderRadius:10,padding:"12px 14px"}},
-React.createElement("div",{style:{fontSize:11,fontWeight:700,color:"#4f46e5",marginBottom:6}},"\u62C5\u5F53\u8005\u7528URL"),
-React.createElement("div",{style:{fontSize:10,color:"#6366f1",marginBottom:8,wordBreak:"break-all",lineHeight:"1.4",maxHeight:40,overflow:"hidden"}},bbModal.staffUrl),
-React.createElement("button",{onClick:()=>{
-navigator.clipboard.writeText(bbModal.staffUrl).then(()=>showNotif("担当者用URLをコピーしました","success")).catch(()=>prompt("URLをコピー:",bbModal.staffUrl));
-},style:{width:"100%",padding:"8px",background:"#4f46e5",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}},
-React.createElement(Copy,{size:12}),"\u62C5\u5F53\u8005URL \u30B3\u30D4\u30FC"
-)
-),
-
-React.createElement("div",{style:{background:"#faf5ff",border:"1px solid #e9d5ff",borderRadius:10,padding:"12px 14px"}},
-React.createElement("div",{style:{fontSize:11,fontWeight:700,color:"#7c3aed",marginBottom:6}},"\u4E0A\u5C64\u90E8\u7528URL"),
-React.createElement("div",{style:{fontSize:10,color:"#8b5cf6",marginBottom:8,wordBreak:"break-all",lineHeight:"1.4",maxHeight:40,overflow:"hidden"}},bbModal.execUrl),
-React.createElement("button",{onClick:()=>{
-navigator.clipboard.writeText(bbModal.execUrl).then(()=>showNotif("上層部用URLをコピーしました","success")).catch(()=>prompt("URLをコピー:",bbModal.execUrl));
-},style:{width:"100%",padding:"8px",background:"#7c3aed",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}},
-React.createElement(Copy,{size:12}),"\u4E0A\u5C64\u90E8URL \u30B3\u30D4\u30FC"
-)
-)
-),
-React.createElement("div",{style:{fontSize:11,color:"#94a3b8",marginBottom:14}},"\u203B URL\u3092\u62C5\u5F53\u8005\u30FB\u4E0A\u5C64\u90E8\u306B\u30E1\u30FC\u30EB\u9001\u4ED8\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u56DE\u7B54\u306FBB\u8A3A\u65AD\u306B\u81EA\u52D5\u9023\u643A\u3055\u308C\u307E\u3059\u3002"
-
-)
-),
-
-
 
 bbModal.urlError&&
-React.createElement("div",{style:{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#dc2626"}},"\u4E8B\u524D\u554F\u8A3AURL\u306E\u81EA\u52D5\u767A\u884C\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002BB\u8A3A\u65AD\u753B\u9762\u304B\u3089\u624B\u52D5\u3067URL\u3092\u767A\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
-
+React.createElement("div",{style:{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#dc2626"}},"\u4E8B\u524D\u554F\u8A3AURL\u306E\u81EA\u52D5\u767A\u884C\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002BB\u8A3A\u65AD\u753B\u9762\u304B\u3089\u624B\u52D5\u3067\u767A\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
 ),
 
+React.createElement("div",{style:{background:"#f8faff",border:"1px solid #e8edf5",borderRadius:10,padding:"16px",marginBottom:14}},
+React.createElement("div",{style:{fontSize:12,fontWeight:700,color:"#4f46e5",marginBottom:12,display:"flex",alignItems:"center",gap:6}},
+React.createElement(Mail,{size:14,color:"#4f46e5"}),"\u4E8B\u52D9\u3078\u306EURL\u9001\u4ED8\u4F9D\u983C"
+),
+React.createElement("div",{style:{fontSize:11,color:"#64748b",marginBottom:10,lineHeight:1.6}},"\u4E8B\u524D\u554F\u8A3A\u306EURL\u3092\u4E8B\u52D9\u304C\u30E1\u30FC\u30EB\u3067\u9001\u4ED8\u3057\u307E\u3059\u3002",React.createElement("br",null),"\u7279\u8A18\u4E8B\u9805\u304C\u3042\u308C\u3070\u30E1\u30E2\u306B\u8A18\u5165\u3057\u3066\u304F\u3060\u3055\u3044\u3002"),
 
-
-!bbModal.staffUrl&&!bbModal.urlError&&
-React.createElement("div",{style:{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#92400e"}},"\u9867\u5BA2\u30AB\u30FC\u30C9\u4F5C\u6210\u5F8C\u306BBB\u8A3A\u65AD\u753B\u9762\u304B\u3089\u4E8B\u524D\u554F\u8A3AURL\u3092\u767A\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
-
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}},
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:10,color:"#94a3b8",marginBottom:2}},"\u30E1\u30FC\u30EB"),
+React.createElement("div",{style:{fontSize:12,color:"#0f172a",fontWeight:500}},bbModal.email||"\u672A\u5165\u529B")
+),
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:10,color:"#94a3b8",marginBottom:2}},"\u30A2\u30DD\u65E5\u7A0B"),
+React.createElement("div",{style:{fontSize:12,color:"#0f172a",fontWeight:500}},bbModal.apoDate||"\u672A\u8A2D\u5B9A")
+)
 ),
 
+React.createElement("textarea",{value:bbClerkMemo,onChange:(e)=>setBbClerkMemo(e.target.value),
+placeholder:"\u4E8B\u52D9\u3078\u306E\u30E1\u30E2\uFF08\u4EFB\u610F\uFF09",rows:2,
+style:{width:"100%",background:"#fff",border:"1px solid #e8edf5",borderRadius:8,padding:"8px 12px",
+color:"#0f172a",fontSize:12,outline:"none",fontFamily:"'Noto Sans JP',sans-serif",
+boxSizing:"border-box",resize:"vertical"}}),
 
-React.createElement("div",{style:{display:"flex",gap:8}},
-React.createElement("button",{onClick:()=>setBbModal(null),style:{flex:1,padding:"10px",background:"#f8faff",border:"1px solid #e8edf5",borderRadius:8,color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u9589\u3058\u308B"),
-!bbModal.staffUrl&&
-React.createElement("button",{onClick:()=>window.open("https://gakusapo-andm.github.io/bb-shindan/","_blank"),
-style:{flex:1,padding:"10px",background:"#a78bfa",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"BB\u8A3A\u65AD\u3092\u958B\u304F \u2197")
+bbClerkSent?
+React.createElement("div",{style:{marginTop:10,background:"#dcfce7",border:"1px solid #22c55e44",borderRadius:8,padding:"10px",fontSize:12,color:"#15803d",fontWeight:600,textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:6}},
+React.createElement(Check,{size:14,color:"#22c55e"}),"\u4E8B\u52D9\u3078\u4F9D\u983C\u3057\u307E\u3057\u305F\uFF01"):
 
+React.createElement("button",{onClick:()=>{
+if(onCreateTodo){
+const memoLines=[];
+if(bbModal.inquiryNo)memoLines.push("\u554F\u8A3A\u756A\u53F7: "+bbModal.inquiryNo);
+if(bbModal.email)memoLines.push("\u9001\u4ED8\u5148: "+bbModal.email);
+if(bbModal.apoDate)memoLines.push("\u30A2\u30DD\u65E5\u7A0B: "+bbModal.apoDate);
+if(bbClerkMemo.trim())memoLines.push(bbClerkMemo.trim());
+onCreateTodo({
+customerId:bbModal.dealId,
+company:bbModal.company,
+contact:bbModal.contact,
+email:bbModal.email||"",
+owner:bbModal.owner||user.name,
+type:"preinput_email",
+triggerStage:"\u2462",
+memo:memoLines.join(" / ")
+});
+setBbClerkSent(true);
+showNotif("\u4E8B\u52D9\u3078URL\u9001\u4ED8\u3092\u4F9D\u983C\u3057\u307E\u3057\u305F","success");
+}
+},style:{marginTop:10,width:"100%",padding:"10px",background:"#4f46e5",border:"none",borderRadius:8,
+color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",
+display:"flex",alignItems:"center",justifyContent:"center",gap:6}},
+React.createElement(Mail,{size:14,color:"#fff"}),"\u4E8B\u52D9\u3078URL\u9001\u4ED8\u3092\u4F9D\u983C")
+),
+
+React.createElement("div",{style:{display:"flex",gap:8,marginTop:14}},
+React.createElement("button",{onClick:()=>setBbModal(null),style:{flex:1,padding:"10px",background:"#f8faff",border:"1px solid #e8edf5",borderRadius:8,color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}},"\u9589\u3058\u308B")
 )
 )
 ),
@@ -8497,6 +8596,7 @@ const[copied,setCopied]=useState(null);
 
 const TASK_META={
 thanks_email:{label:"お礼メール",color:"#3b82f6",bg:"#eff6ff"},
+preinput_email:{label:"事前問診URL送付",color:"#6366f1",bg:"#eef2ff"},
 document_send:{label:"資料送付",color:"#f59e0b",bg:"#fffbeb"},
 contract:{label:"契約書類",color:"#8b5cf6",bg:"#f5f3ff"},
 invoice:{label:"請求書",color:"#ec4899",bg:"#fdf2f8"},
