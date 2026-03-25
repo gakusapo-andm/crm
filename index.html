@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gakusapo CRM v15</title>
+  <title>Gakusapo CRM v19</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -349,7 +349,9 @@ _teleapoId:row.teleapo_id??null,
 _address:co.address??"",
 _url:co.url??"",
 _revenue:co.revenue??"",
-_source:co.source??""
+_source:co.source??"",
+contractValue:row.contract_value??0,
+contractType:row.contract_type??""
 };
 }
 
@@ -382,7 +384,9 @@ ra_score:c.raScore??{},
 pending_lost:c.pendingLost??false,
 bb_inquiry_no:c.bbId||null,
 google_event_id:c.google_event_id??null,
-teleapo_id:c._teleapoId??null
+teleapo_id:c._teleapoId??null,
+contract_value:c.contractValue??0,
+contract_type:c.contractType??""
 };
 }
 
@@ -517,7 +521,7 @@ return[...cs,customer];
 });
 }
 }
-});return function(_x4){return _ref2.apply(this,arguments);};}()).subscribe();
+});return function(_x4){return _ref2.apply(this,arguments);};}()).subscribe((status,err)=>{if(status==="CHANNEL_ERROR"||status==="TIMED_OUT")console.warn("RT crm-deals",status,err);});
 
 
 
@@ -536,7 +540,7 @@ const fresh=updated.find((u)=>u.id===c.id);
 return fresh??c;
 }));
 }
-});return function(_x5){return _ref3.apply(this,arguments);};}()).subscribe();
+});return function(_x5){return _ref3.apply(this,arguments);};}()).subscribe((status,err)=>{if(status==="CHANNEL_ERROR"||status==="TIMED_OUT")console.warn("RT companies",status,err);});
 
 return()=>{
 sb.removeChannel(dealsCh);
@@ -625,7 +629,7 @@ lastCallResult:row.last_call_result??"",
 callLogs:(row.recent_calls??[]).map((c)=>({
 id:c.id,date:c.called_at?.slice(0,10)??"",
 time:c.called_at?.slice(11,16)??"",
-tags:[c.result].filter(Boolean),note:c.memo??"",by:c.caller_id??""
+tags:[DB_RESULT_TO_TAG[c.result]||c.result].filter(Boolean),note:c.memo??"",by:c.caller_id??""
 })),
 dealId:row.deal_id??null,
 dealStage:row.deal_stage??null,
@@ -649,6 +653,12 @@ const TAG_TO_DB_RESULT={
 apo:"appointed",contact:"connected_hold",absent:"no_answer",
 material:"materials_sent",refuse:"connected_ng",gng:"reception",
 claim:"connected_ng",timing:"callback",person:"connected_ng"
+};
+/* v17: DB値→UIタグ逆引き（callLogs表示修正） */
+const DB_RESULT_TO_TAG={
+appointed:"apo",connected_hold:"contact",connected_ng:"refuse",
+no_answer:"absent",materials_sent:"material",reception:"gng",
+callback:"timing",wrong_number:"absent",other:"absent"
 };
 
 const TAG_PRIORITY=["apo","material","contact","timing","person","refuse","claim","gng","absent"];
@@ -754,11 +764,11 @@ on("postgres_changes",{event:"*",schema:"public",table:"teleapo_lists"},(payload
 if(payload.eventType==="DELETE"){
 _setItems((prev)=>prev.filter((r)=>r.id!==payload.old.id));
 }else{reload(payload.new.id);}
-}).subscribe();
+}).subscribe((status,err)=>{if(status==="CHANNEL_ERROR"||status==="TIMED_OUT")console.warn("RT teleapo-lists",status,err);});
 const ch2=sb.channel("teleapo-calls-rt").
 on("postgres_changes",{event:"INSERT",schema:"public",table:"teleapo_calls"},(payload)=>{
 reload(payload.new.teleapo_id);
-}).subscribe();
+}).subscribe((status,err)=>{if(status==="CHANNEL_ERROR"||status==="TIMED_OUT")console.warn("RT teleapo-calls",status,err);});
 return()=>{sb.removeChannel(ch1);sb.removeChannel(ch2);};
 },[supaReady]);
 
@@ -859,7 +869,7 @@ const exists=prev.some((r)=>r.id===item.id);
 return exists?prev.map((r)=>r.id===item.id?{...r,...item}:r):[item,...prev];
 });
 }
-}).subscribe();
+}).subscribe((status,err)=>{if(status==="CHANNEL_ERROR"||status==="TIMED_OUT")console.warn("RT lost-records",status,err);});
 return()=>{sb.removeChannel(ch);};
 },[supaReady]);
 
@@ -952,7 +962,7 @@ const exists=prev.some((r)=>r.id===item.id);
 return exists?prev.map((r)=>r.id===item.id?{...r,...item}:r):[item,...prev];
 });
 }
-}).subscribe();
+}).subscribe((status,err)=>{if(status==="CHANNEL_ERROR"||status==="TIMED_OUT")console.warn("RT recontacts",status,err);});
 return()=>{sb.removeChannel(ch);};
 },[supaReady]);
 
@@ -1206,6 +1216,7 @@ completed_at:t.completedAt?new Date(t.completedAt).toISOString():null
 function useClerkTodos(){
 const[items,_setItems]=useState([]);
 const[supaReady,setSupaReady]=useState(false);
+const[loaded,setLoaded]=useState(false);
 
 useEffect(()=>{
 let cancelled=false;
@@ -1215,8 +1226,9 @@ setSupaReady(true);
 sb.from("clerk_todos").select("*").order("created_at",{ascending:false}).
 then(({data,error})=>{
 if(cancelled)return;
-if(error){console.error("clerk_todos load error:",error);return;}
+if(error){console.error("clerk_todos load error:",error);setLoaded(true);return;}
 if(data)_setItems(data.map(rowToClerkTodo));
+setLoaded(true);
 });
 });
 return()=>{cancelled=true;};
@@ -1235,14 +1247,14 @@ const exists=prev.some((r)=>r.id===item.id);
 return exists?prev.map((r)=>r.id===item.id?{...r,...item}:r):[item,...prev];
 });
 }
-}).subscribe();
+}).subscribe((status,err)=>{if(status==="CHANNEL_ERROR"||status==="TIMED_OUT")console.warn("RT clerk-todos",status,err);});
 return()=>{_supabase.removeChannel(ch);};
 },[supaReady]);
 
 function setItems(updater){
 _setItems((prev)=>typeof updater==="function"?updater(prev):updater);
 }
-return[items,setItems];
+return[items,setItems,loaded];
 }
 
 
@@ -1447,6 +1459,7 @@ const navItems=[
 {icon:RotateCcw,label:"追客リスト",id:4,group:"顧客管理"},
 {icon:Calendar,label:"カレンダー",id:5},
 {icon:BarChart2,label:"KPIレポート",id:6},
+{icon:Columns,label:"対比",id:11},
 {icon:BookOpen,label:"育成管理",id:7},
 {icon:FileText,label:"見積・請求",id:8},
 {icon:Settings,label:"設定",id:9,adminOnly:true},
@@ -1768,7 +1781,7 @@ c.nextAction?`${c.nextAction.date} ${c.nextAction.content}`:"—"
 
 
 
-function CustomerDetailPanel({customer,onClose,onUpdate,onDelete,onLostRequest,teleapoLists,onCreateTodo,user,onSyncGcal,showNotif}){
+function CustomerDetailPanel({customer,onClose,onUpdate,onDelete,onLostRequest,teleapoLists,onCreateTodo,user,onSyncGcal,showNotif,salesMembers=[]}){
 const[tab,setTab]=useState(0);
 const[editing,setEditing]=useState(false);
 const[form,setForm]=useState({...customer});
@@ -1789,6 +1802,7 @@ const[todoNotif,setTodoNotif]=useState(null);
 
 const[stageExtraTasks,setStageExtraTasks]=useState(null);
 const[confirmDelete,setConfirmDelete]=useState(false);
+const[contractForm,setContractForm]=useState(null);
 
 const[preInputData,setPreInputData]=useState(null);
 const[preInputLoading,setPreInputLoading]=useState(false);
@@ -1805,22 +1819,24 @@ execUrl:`${base}?id=${encodeURIComponent(customer.bbId)}&tk=${token}&size=${size
 };
 },[customer.bbId,preInputData]);
 
+/* v19 fix: チャネル参照を外に出してリーク防止 */
 useEffect(()=>{
 if(!customer.bbId)return;
 let cancelled=false;
+let rtCh=null,sbRef=null;
 setPreInputLoading(true);
 getSupabase().then((sb)=>{
 if(!sb||cancelled)return;
+sbRef=sb;
 sb.from("pre_inputs").select("*").eq("customer_id",customer.bbId).maybeSingle().then(({data})=>{
 if(!cancelled){setPreInputData(data||null);setPreInputLoading(false);}
 });
-const ch=sb.channel("pre-input-"+customer.bbId).
+rtCh=sb.channel("pre-input-"+customer.bbId).
 on("postgres_changes",{event:"*",schema:"public",table:"pre_inputs",filter:"customer_id=eq."+customer.bbId},(payload)=>{
 if(!cancelled){setPreInputData(payload.new||null);}
-}).subscribe();
-return()=>{cancelled=true;sb.removeChannel(ch);};
+}).subscribe((status,err)=>{if(status==="CHANNEL_ERROR"||status==="TIMED_OUT")console.warn("RT pre-input",status,err);});
 });
-return()=>{cancelled=true;};
+return()=>{cancelled=true;if(rtCh&&sbRef)sbRef.removeChannel(rtCh);};
 },[customer.bbId]);
 
 
@@ -1874,6 +1890,13 @@ function changeStage(newStage){
 const today=new Date().toISOString().slice(0,10);
 const STAGE_ORDER=["①","②","③","④","⑤","⑥","⑦"];
 const isRollback=STAGE_ORDER.indexOf(newStage)<STAGE_ORDER.indexOf(customer.stage);
+
+/* v16: ⑦成約時は金額入力ポップを先に表示 */
+if(newStage==="⑦"&&!isRollback){
+setContractForm({value:customer.contractValue||"",type:customer.contractType||"",date:today});
+return;
+}
+
 const updated={
 ...customer,
 stage:newStage,
@@ -1899,6 +1922,32 @@ checks:{document_send:false,contract:false,schedule:false,other:false},
 otherMemo:""
 });
 }
+}
+
+/* v16: 成約確定ハンドラ */
+function confirmContract(){
+if(!contractForm)return;
+const today=contractForm.date||new Date().toISOString().slice(0,10);
+const updated={
+...customer,
+stage:"⑦",
+contractValue:Number(contractForm.value)||0,
+contractType:contractForm.type||"",
+stageHistory:[...customer.stageHistory,{stage:"⑦",date:today,note:"成約",by:user?.name||"自分"}]
+};
+onUpdate(updated);
+setForm({...form,stage:"⑦"});
+setContractForm(null);
+if(onCreateTodo){
+onCreateTodo({
+customerId:customer.id,company:customer.company,
+contact:customer.contact,email:customer.email,
+owner:customer.owner,type:"contract",
+triggerStage:"⑦",memo:`成約 ¥${Number(contractForm.value||0).toLocaleString()} (${contractForm.type||"未設定"})`
+});
+}
+setTodoNotif("⑦成約おめでとうございます！事務TODOに追加しました");
+setTimeout(()=>setTodoNotif(null),4000);
 }
 
 function submitExtraTasks(){
@@ -2016,6 +2065,53 @@ outline:customer.stage===s.no?`1px solid ${s.accent}55`:"none"
 }},
 s.no
 )
+)
+),
+
+/* v16: 成約金額入力ポップアップ */
+contractForm&&
+React.createElement("div",{style:{
+padding:"14px 20px 16px",borderBottom:"1px solid #e8edf5",
+background:"linear-gradient(135deg,#f0fdf4,#ecfdf5)",animation:"fadeIn 0.2s"
+}},
+React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:10}},
+React.createElement("span",{style:{fontSize:18}},"🎉"),
+React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#15803d"}},"成約おめでとうございます！"),
+React.createElement("button",{onClick:()=>setContractForm(null),style:{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:"#94a3b8",fontSize:10}},"キャンセル")
+),
+React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}},
+React.createElement("div",{style:{flex:"1 1 140px",minWidth:120}},
+React.createElement("div",{style:{fontSize:10,color:"#64748b",marginBottom:3,fontWeight:600}},"契約金額（税抜）"),
+React.createElement("div",{style:{display:"flex",alignItems:"center",gap:4}},
+React.createElement("span",{style:{fontSize:12,color:"#475569",fontWeight:600}},"¥"),
+React.createElement("input",{type:"number",value:contractForm.value,
+onChange:(e)=>setContractForm((p)=>({...p,value:e.target.value})),
+placeholder:"例: 500000",
+style:{flex:1,fontSize:13,border:"1px solid #bbf7d0",borderRadius:6,padding:"6px 10px",
+fontFamily:"'DM Mono',monospace",outline:"none",background:"#fff",boxSizing:"border-box"}})
+)
+),
+React.createElement("div",{style:{flex:"1 1 120px",minWidth:100}},
+React.createElement("div",{style:{fontSize:10,color:"#64748b",marginBottom:3,fontWeight:600}},"契約種別"),
+React.createElement("select",{value:contractForm.type,
+onChange:(e)=>setContractForm((p)=>({...p,type:e.target.value})),
+style:{width:"100%",fontSize:12,border:"1px solid #bbf7d0",borderRadius:6,padding:"6px 10px",
+fontFamily:"'Noto Sans JP',sans-serif",outline:"none",background:"#fff",cursor:"pointer"}},
+React.createElement("option",{value:""},"-- 選択 --"),
+React.createElement("option",{value:"PRISM LOGIC"},"PRISM LOGIC"),
+React.createElement("option",{value:"BB診断"},"BB診断"),
+React.createElement("option",{value:"コンサル"},"コンサル"),
+React.createElement("option",{value:"その他"},"その他")
+)
+)
+),
+React.createElement("button",{onClick:confirmContract,
+style:{
+padding:"7px 20px",borderRadius:8,border:"none",fontSize:12,fontWeight:700,
+background:contractForm.value?"linear-gradient(135deg,#22c55e,#16a34a)":"#94a3b8",
+color:"#fff",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",
+boxShadow:contractForm.value?"0 2px 8px #22c55e55":"none"
+}},"⑦ 成約を確定"
 )
 ),
 
@@ -2142,7 +2238,7 @@ React.createElement("label",{style:labelStyle},"\u65B0\u3057\u3044\u62C5\u5F53\u
 React.createElement("select",{value:ownerChangeForm.newOwner,onChange:(e)=>setOwnerChangeForm({...ownerChangeForm,newOwner:e.target.value}),
 style:{...inputStyle,cursor:"pointer"}},
 React.createElement("option",{value:""},"\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044"),
-["吉村","大原","小島","まゆな","ななみ"].filter((n)=>n!==customer.owner).map((n)=>
+salesMembers.map((m)=>m.name).filter((n)=>n!==customer.owner).map((n)=>
 React.createElement("option",{key:n,value:n},n)
 )
 )
@@ -2234,6 +2330,26 @@ React.createElement("span",{style:{color:"#475569",flex:1,overflow:"hidden",text
 ));
 
 })()
+),
+
+/* v16: 成約情報表示 (⑦のみ) */
+customer.stage==="⑦"&&
+React.createElement("div",{style:{marginTop:16,paddingTop:14,borderTop:"1px solid #bbf7d0"}},
+React.createElement("div",{style:{fontSize:11,color:"#15803d",fontWeight:600,marginBottom:10,letterSpacing:"0.06em"}},"🎉 成約情報"),
+React.createElement("div",{style:{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"14px"}},
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:10,color:"#64748b",marginBottom:3}},"契約金額（税抜）"),
+React.createElement("div",{style:{fontSize:16,fontWeight:700,color:"#15803d",fontFamily:"'DM Mono',monospace"}},
+"¥",(customer.contractValue||0).toLocaleString()
+)
+),
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:10,color:"#64748b",marginBottom:3}},"契約種別"),
+React.createElement("div",{style:{fontSize:13,fontWeight:600,color:"#0f172a"}},customer.contractType||"未設定")
+)
+)
+)
 ),
 
 
@@ -2789,7 +2905,7 @@ React.createElement("button",{onClick:()=>onApprove(r.id),style:{flex:1,backgrou
 
 
 
-function LostBoxPage({lostList,requests,isAdmin,onApprove,onReject,onUpdate,onSendToRecontact,customers=[],recontactSentIds=new Set()}){
+function LostBoxPage({lostList,requests,isAdmin,onApprove,onReject,onUpdate,onSendToRecontact,customers=[],recontactSentIds=new Set(),salesMembers=[]}){
 const{isMobile,isTablet}=useResponsive();
 const[subTab,setSubTab]=useState(isAdmin?"approval":"lost");
 const[filterCat,setFilterCat]=useState("all");
@@ -3068,7 +3184,7 @@ React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#0f172a"}},r
 React.createElement("div",{style:{fontSize:11,color:"#64748b",marginTop:2}},r.contact," \uFF0F \u62C5\u5F53: ",isEditing?
 React.createElement("select",{value:editForm.owner,onChange:(e)=>setEditForm({...editForm,owner:e.target.value}),
 style:{...inputSt,display:"inline-block",width:"auto",padding:"2px 8px",marginLeft:4}},
-["吉村","大原","小島","まゆな","ななみ"].map((n)=>React.createElement("option",{key:n,value:n},n))
+salesMembers.map((m)=>m.name).map((n)=>React.createElement("option",{key:n,value:n},n))
 ):
 r.owner
 )
@@ -4162,28 +4278,32 @@ const EMPTY_NEW={company:"",contact:"",title:"",email:"",phone:"",address:"",ind
 const[newForm,setNewForm]=useState(EMPTY_NEW);
 
 
+/* v19 fix: チャネルリーク防止 + customersをrefで参照してチャネル再生成を抑止 */
+const customersRef=useRef(customers);
+useEffect(()=>{customersRef.current=customers;},[customers]);
 useEffect(()=>{
 let cancelled=false;
+let rtCh=null,sbRef=null;
 getSupabase().then((sb)=>{
 if(!sb||cancelled)return;
-const ch=sb.channel("pre-inputs-notif-rt").
+sbRef=sb;
+rtCh=sb.channel("pre-inputs-notif-rt").
 on("postgres_changes",{event:"UPDATE",schema:"public",table:"pre_inputs"},(payload)=>{
 if(cancelled)return;
 const newStatus=payload.new?.status;
 const custId=payload.new?.customer_id;
 if(!custId)return;
-const deal=customers.find((c)=>c.bbId===custId);
+const deal=customersRef.current.find((c)=>c.bbId===custId);
 const compName=deal?.company||custId;
 if(newStatus==="完了"){
 showNotif(`${compName} が事前問診を完了しました！`,"success");
 }else if(newStatus==="入力中"&&payload.old?.status==="未開始"){
 showNotif(`${compName} が事前問診の回答を開始しました`,"info");
 }
-}).subscribe();
-return()=>{cancelled=true;sb.removeChannel(ch);};
+}).subscribe((status,err)=>{if(status==="CHANNEL_ERROR"||status==="TIMED_OUT")console.warn("RT pre-inputs-notif",status,err);});
 });
-return()=>{cancelled=true;};
-},[customers]);
+return()=>{cancelled=true;if(rtCh&&sbRef)sbRef.removeChannel(rtCh);};
+},[]);
 
 
 useEffect(()=>{
@@ -4360,7 +4480,8 @@ teleapoLists:teleapoLists||[],
 onCreateTodo:onCreateTodo,
 user:user,
 onSyncGcal:onSyncGcal,
-showNotif:showNotif}
+showNotif:showNotif,
+salesMembers:salesMembers}
 ),
 
 
@@ -4491,6 +4612,8 @@ const btnRef=useRef(null);
 const nonceRef=useRef(null);
 
 
+
+
 const generateNonce=function(){var _ref7=_asyncToGenerator(function*(){
 const rawNonce=crypto.randomUUID();
 const encoder=new TextEncoder();
@@ -4602,6 +4725,8 @@ React.createElement("div",{style:{color:"#3b82f6",display:"flex",alignItems:"cen
 
 ),
 
+
+
 error&&
 React.createElement("div",{style:{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:12,margin:"12px 0",color:"#dc2626",fontSize:13,textAlign:"left"}},
 React.createElement("strong",null,"\u26A0 \u30A8\u30E9\u30FC:")," ",error
@@ -4626,6 +4751,30 @@ function DashboardHome({user,actions,customers=[],teleapoLists=[],salesMembers=[
 const isAdmin=user.role==="admin";
 
 const[dashPeriod,setDashPeriod]=React.useState("week");
+
+/* v16: teleapo_callsをDBから取得（架電数・接触数の正確な計算用） */
+const[dashTcalls,setDashTcalls]=React.useState([]);
+React.useEffect(()=>{
+(async()=>{
+const sb=await getSupabase();
+if(!sb)return;
+const{data,error}=await sb.from("teleapo_calls").select("called_at,caller_id,result");
+if(!error&&data)setDashTcalls(data);
+})();
+},[]);
+/* v17: callback含む（担当者と会話できた＝接触） */
+const DASH_CONNECTED=["connected_hold","connected_ng","materials_sent","appointed","callback"];
+
+/* v17: activitiesからstage_changeイベント取得（③〜⑦のダッシュボード表示用） */
+const[dashActivities,setDashActivities]=React.useState([]);
+React.useEffect(()=>{
+(async()=>{
+const sb=await getSupabase();
+if(!sb)return;
+const{data,error}=await sb.from("activities").select("created_at,performed_by,metadata").eq("activity_type","stage_change");
+if(!error&&data)setDashActivities(data);
+})();
+},[]);
 
 
 const localDateStr=(d)=>{
@@ -4660,27 +4809,33 @@ const targetCustomers=isAdmin?customers:customers.filter((c)=>c.owner===user.nam
 
 
 const weeklyMap={};weekDays.forEach((d)=>{weeklyMap[d.date]={appts:0,oiff:0,pc:0};});
-targetCustomers.forEach((c)=>(c.stageHistory||[]).forEach((h)=>{
-if(h.date&&weeklyMap[h.date]){
-if(apptStages.has(h.stage))weeklyMap[h.date].appts++;
-if(oiffStages.has(h.stage))weeklyMap[h.date].oiff++;
-if(pcStages.has(h.stage))weeklyMap[h.date].pc++;
-}
-}));
+/* v17: dashActivities(stage_change)から③〜⑥を集計 */
+dashActivities.forEach((a)=>{
+const d=a.created_at?.slice(0,10);
+if(!d||!weeklyMap[d])return;
+if(!isAdmin&&a.performed_by!==user.name)return;
+const ts=a.metadata?.to_stage;
+if(apptStages.has(ts))weeklyMap[d].appts++;
+if(oiffStages.has(ts))weeklyMap[d].oiff++;
+if(pcStages.has(ts))weeklyMap[d].pc++;
+});
 const weeklyData=weekDays.slice(0,5).map((d)=>({day:d.label,...weeklyMap[d.date]}));
 
 
 const weekLabels=["W1","W2","W3","W4","W5"];
 const monthlyMap=weekLabels.map(()=>({appts:0,oiff:0,pc:0}));
-targetCustomers.forEach((c)=>(c.stageHistory||[]).forEach((h)=>{
-if(h.date&&h.date>=localDateStr(monthStart)&&h.date<=localDateStr(monthEnd)){
-const day=parseInt(h.date.slice(8),10);
+/* v17: dashActivitiesから月次チャート集計 */
+dashActivities.forEach((a)=>{
+const d=a.created_at?.slice(0,10);
+if(!d||d<localDateStr(monthStart)||d>localDateStr(monthEnd))return;
+if(!isAdmin&&a.performed_by!==user.name)return;
+const day=parseInt(d.slice(8),10);
 const wi=Math.min(Math.floor((day-1)/7),4);
-if(apptStages.has(h.stage))monthlyMap[wi].appts++;
-if(oiffStages.has(h.stage))monthlyMap[wi].oiff++;
-if(pcStages.has(h.stage))monthlyMap[wi].pc++;
-}
-}));
+const ts=a.metadata?.to_stage;
+if(apptStages.has(ts))monthlyMap[wi].appts++;
+if(oiffStages.has(ts))monthlyMap[wi].oiff++;
+if(pcStages.has(ts))monthlyMap[wi].pc++;
+});
 const monthlyData=weekLabels.map((w,i)=>({day:w,...monthlyMap[i]}));
 
 const chartData=dashPeriod==="week"?weeklyData:monthlyData;
@@ -4696,17 +4851,37 @@ const inPeriod=(date)=>date&&date>=periodStart&&date<=periodEnd;
 const stageNos=["①","②","③","④","⑤","⑥","⑦"];
 const safeRate=(a,b)=>b>0?Math.round(a/b*1000)/10:null;
 
-
+/* v17: sc — ①②はteleapo_callsベース、③〜⑦はdashActivities */
 const sc={};stageNos.forEach((s)=>{sc[s]=0;});
-targetCustomers.forEach((c)=>(c.stageHistory||[]).forEach((h)=>{
-if(inPeriod(h.date)&&sc[h.stage]!==undefined)sc[h.stage]++;
-}));
+dashTcalls.forEach((tc)=>{
+const d=tc.called_at?.slice(0,10);
+if(!inPeriod(d))return;
+if(!isAdmin&&tc.caller_id!==user.name)return;
+sc["①"]++;
+if(DASH_CONNECTED.includes(tc.result))sc["②"]++;
+});
+dashActivities.forEach((a)=>{
+const d=a.created_at?.slice(0,10);
+if(!inPeriod(d))return;
+if(!isAdmin&&a.performed_by!==user.name)return;
+const ts=a.metadata?.to_stage;
+if(ts&&ts!=="①"&&ts!=="②"&&sc[ts]!==undefined)sc[ts]++;
+});
 
-
+/* v17: teamSc — 同様にdashActivitiesベース */
 const teamSc={};stageNos.forEach((s)=>{teamSc[s]=0;});
-customers.forEach((c)=>(c.stageHistory||[]).forEach((h)=>{
-if(inPeriod(h.date)&&teamSc[h.stage]!==undefined)teamSc[h.stage]++;
-}));
+dashTcalls.forEach((tc)=>{
+const d=tc.called_at?.slice(0,10);
+if(!inPeriod(d))return;
+teamSc["①"]++;
+if(DASH_CONNECTED.includes(tc.result))teamSc["②"]++;
+});
+dashActivities.forEach((a)=>{
+const d=a.created_at?.slice(0,10);
+if(!inPeriod(d))return;
+const ts=a.metadata?.to_stage;
+if(ts&&ts!=="①"&&ts!=="②"&&teamSc[ts]!==undefined)teamSc[ts]++;
+});
 
 
 const prevStart=(()=>{
@@ -4726,23 +4901,33 @@ const d=new Date(monthStart);d.setDate(d.getDate()-1);return localDateStr(d);
 const inPrev=(date)=>date&&date>=prevStart&&date<=prevEnd;
 
 
+/* v17: periodCount/prevCount — ①②はteleapo_calls、③〜⑦はdashActivities */
 const periodCount={tele:0,oiff:0,pc:0,nc:0};
 const prevCount={tele:0,oiff:0,pc:0,nc:0};
-targetCustomers.forEach((c)=>{
-(c.stageHistory||[]).forEach((h)=>{
-if(inPeriod(h.date)){
-if(["①","②","③"].includes(h.stage))periodCount.tele++;
-if(["④","⑤"].includes(h.stage))periodCount.oiff++;
-if(h.stage==="⑥")periodCount.pc++;
-if(h.stage==="⑦")periodCount.nc++;
-}
-if(inPrev(h.date)){
-if(["①","②","③"].includes(h.stage))prevCount.tele++;
-if(["④","⑤"].includes(h.stage))prevCount.oiff++;
-if(h.stage==="⑥")prevCount.pc++;
-if(h.stage==="⑦")prevCount.nc++;
-}
+/* ①② from teleapo_calls */
+dashTcalls.forEach((tc)=>{
+const d=tc.called_at?.slice(0,10);
+if(!isAdmin&&tc.caller_id!==user.name)return;
+if(inPeriod(d))periodCount.tele++;
+if(inPrev(d))prevCount.tele++;
 });
+/* ③〜⑦ from dashActivities */
+dashActivities.forEach((a)=>{
+const d=a.created_at?.slice(0,10);
+if(!isAdmin&&a.performed_by!==user.name)return;
+const ts=a.metadata?.to_stage;
+if(inPeriod(d)){
+if(ts==="③")periodCount.tele++;
+if(["④","⑤"].includes(ts))periodCount.oiff++;
+if(ts==="⑥")periodCount.pc++;
+if(ts==="⑦")periodCount.nc++;
+}
+if(inPrev(d)){
+if(ts==="③")prevCount.tele++;
+if(["④","⑤"].includes(ts))prevCount.oiff++;
+if(ts==="⑥")prevCount.pc++;
+if(ts==="⑦")prevCount.nc++;
+}
 });
 
 const calcChange=(cur,prev)=>{
@@ -4969,8 +5154,11 @@ React.createElement("div",null,
 React.createElement("div",{style:{fontSize:11,color:"#64748b",letterSpacing:"0.08em",marginBottom:2}},"TODAY'S ACTIONS"),
 React.createElement("div",{style:{fontSize:15,fontWeight:600,color:"#0f172a"}},"\u672C\u65E5\u306E\u30A2\u30AF\u30B7\u30E7\u30F3",isAdmin?" — 全員分":` — ${user.name}`)
 ),
-React.createElement("span",{style:{background:"#fef2f2",color:"#ef4444",fontSize:11,padding:"4px 10px",borderRadius:20,fontWeight:600,border:"1px solid #ef444444"}},
-actions.filter((a)=>a.urgent).length,"\u4EF6 \u8981\u5BFE\u5FDC"
+React.createElement("span",{style:{display:"flex",gap:6,flexShrink:0}},
+actions.filter((a)=>a.type==="teleapo").length>0&&React.createElement("span",{style:{background:"#eff6ff",color:"#3b82f6",fontSize:11,padding:"4px 10px",borderRadius:20,fontWeight:600,border:"1px solid #3b82f644"}},
+actions.filter((a)=>a.type==="teleapo").length,"件 架電"),
+actions.filter((a)=>a.urgent).length>0&&React.createElement("span",{style:{background:"#fef2f2",color:"#ef4444",fontSize:11,padding:"4px 10px",borderRadius:20,fontWeight:600,border:"1px solid #ef444444"}},
+actions.filter((a)=>a.urgent).length,"件 要対応")
 )
 ),
 actions.length===0?
@@ -4978,17 +5166,24 @@ React.createElement("div",{style:{textAlign:"center",color:"#64748b",fontSize:13
 
 React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8}},
 actions.map((action)=>
-React.createElement("div",{key:action.id,style:{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderRadius:10,background:action.urgent?"#ef44440a":"#f8faff",border:`1px solid ${action.urgent?"#ef444422":"#e8edf5"}`,cursor:"pointer",transition:"background 0.15s"}},
+React.createElement("div",{key:action.id,style:{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderRadius:10,background:action.type==="teleapo"?(action.overdue?"#fef2f2":"#f0f9ff"):(action.urgent?"#ef44440a":"#f8faff"),border:`1px solid ${action.type==="teleapo"?(action.overdue?"#ef444422":"#bae6fd22"):(action.urgent?"#ef444422":"#e8edf5")}`,cursor:"pointer",transition:"background 0.15s"}},
+action.type==="teleapo"?
+React.createElement("div",{style:{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",width:28,height:28,borderRadius:8,background:action.overdue?"#fef2f2":"#dbeafe",border:`1px solid ${action.overdue?"#ef444433":"#93c5fd44"}`}},
+React.createElement(Phone,{size:13,color:action.overdue?"#ef4444":"#3b82f6"})
+):
 React.createElement("div",{style:{flexShrink:0,fontSize:14,color:stageColors[action.stage],fontWeight:700,minWidth:20,textAlign:"center"}},
 action.stage
 ),
 React.createElement("div",{style:{flex:1,minWidth:0}},
 React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6}},
-isAdmin&&React.createElement("span",{style:{fontSize:10,color:"#ef4444",background:"#ef444415",borderRadius:4,padding:"1px 6px",fontWeight:600,flexShrink:0}},action.ownerName),
+isAdmin&&React.createElement("span",{style:{fontSize:10,color:action.type==="teleapo"?"#3b82f6":"#ef4444",background:action.type==="teleapo"?"#3b82f615":"#ef444415",borderRadius:4,padding:"1px 6px",fontWeight:600,flexShrink:0}},action.ownerName),
 React.createElement("span",{style:{fontSize:13,fontWeight:600,color:"#0f172a",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:140}},action.company),
 React.createElement("span",{style:{fontSize:11,color:"#64748b",flexShrink:0}},action.contact)
 ),
-React.createElement("div",{style:{fontSize:12,color:"#64748b",marginTop:2}},action.action)
+React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6,marginTop:2}},
+React.createElement("span",{style:{fontSize:12,color:"#64748b"}},action.action),
+action.overdue&&React.createElement("span",{style:{fontSize:10,color:"#ef4444",background:"#fef2f2",borderRadius:4,padding:"1px 6px",fontWeight:600,border:"1px solid #ef444422"}},action.nextCallDate||action.nextActionDate)
+)
 ),
 React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,flexShrink:0}},
 action.urgent&&React.createElement(AlertCircle,{size:13,color:"#ef4444"}),
@@ -5095,6 +5290,20 @@ return rows;
 }
 
 
+/* v16: 住所から都道府県を自動抽出 */
+const JP_PREFS=["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
+function extractPrefecture(address){
+if(!address)return"";
+const s=address.replace(/^[\s\u3000]+/,"");
+for(const p of JP_PREFS){if(s.startsWith(p))return p;}
+/* 「県」「府」「都」なしの短縮表記にも対応（例: "愛知名古屋市..." → 愛知県） */
+for(const p of JP_PREFS){
+const base=p.replace(/[都道府県]$/,"");
+if(base.length>=2&&s.startsWith(base))return p;
+}
+return"";
+}
+
 const CSV_COL_DEFS=[
 {key:"company",label:"会社名",patterns:[/会社|社名|企業|company|法人/i],required:true},
 {key:"contact",label:"担当者名",patterns:[/担当者?名?|contact|氏名|名前/i]},
@@ -5119,7 +5328,7 @@ if(idx>=0)map[def.key]=idx;
 return map;
 }
 
-function CSVImportModal({onClose,onImport,sourceList,userName,existingLists,salesMembers=[]}){
+function CSVImportModal({onClose,onImport,sourceList,userName,existingLists,salesMembers=[],areaRules=[]}){
 const[step,setStep]=useState("upload");
 const[rawRows,setRawRows]=useState([]);
 const[headers,setHeaders]=useState([]);
@@ -5185,10 +5394,20 @@ if(file)readFile(file,encoding);
 
 const previewItems=rawRows.map((cols,i)=>{
 const get=(key)=>key in colMap?cols[colMap[key]]||"":"";
+const addr=get("address");
+/* v16: 都道府県が空なら住所から自動抽出 */
+const pref=get("prefecture")||extractPrefecture(addr)||defaultPrefecture;
+/* v16: エリアルールで担当者を自動割り当て（CSVにowner指定がない場合のみ） */
+const csvOwner=get("owner");
+let owner=csvOwner||defaultOwner;
+if(!csvOwner&&pref){
+const rule=areaRules.find((r)=>r.pref===pref&&r.assign);
+if(rule)owner=rule.assign;
+}
 return{_idx:i,company:get("company"),contact:get("contact"),title:get("title"),
-phone:get("phone"),industry:get("industry"),prefecture:get("prefecture")||defaultPrefecture,
-address:get("address"),url:get("url"),employees:get("employees"),revenue:get("revenue"),
-owner:get("owner")||defaultOwner,source:get("source")};
+phone:get("phone"),industry:get("industry"),prefecture:pref,
+address:addr,url:get("url"),employees:get("employees"),revenue:get("revenue"),
+owner:owner,source:get("source")};
 }).filter((r)=>r.company);
 
 
@@ -5452,7 +5671,18 @@ const CALL_RESULTS=[
 
 
 
-const STAGE_DOT={"new":"#e2e8f0","called":"#f59e0b","connected":"#22c55e","materials":"#6c5ce7","appointed":"#3b82f6"};
+/* v18: ●ドット色 — 🔘グレー(デフォルト) / 🔴赤(資料送付・時期改め) / 🔵青(アポ取得)
+   時期改め(callback)はreached_stage=connectedだがlastCallResultで判定 */
+const STAGE_DOT={"new":"#e2e8f0","called":"#e2e8f0","connected":"#e2e8f0","materials":"#ef4444","appointed":"#3b82f6"};
+function getStageDotColor(item){
+if(item.reachedStage==="appointed")return"#3b82f6";
+if(item.reachedStage==="materials")return"#ef4444";
+if(item.lastCallResult==="callback")return"#ef4444";
+return"#e2e8f0";
+}
+function isStageDotHighlight(item){
+return item.reachedStage==="appointed"||item.reachedStage==="materials"||item.lastCallResult==="callback";
+}
 
 const SOURCE_LIST=[
 {key:"mynavi26",label:"マイナビ'26",color:"#e11d48",bg:"#ffe4e6"},
@@ -5531,7 +5761,7 @@ default:return{from:"",to:""};
 }
 
 
-function TeleapoPage({user,customers,setCustomers,sourceList:srcListProp,setSourceList,lists,setLists,onCreateTodo,salesMembers=[]}){
+function TeleapoPage({user,customers,setCustomers,sourceList:srcListProp,setSourceList,lists,setLists,onCreateTodo,salesMembers=[],areaRules=[]}){
 const sourceList=srcListProp||SOURCE_LIST;
 
 const getSourceBadgeDyn=(str)=>{
@@ -5585,6 +5815,19 @@ const[assignTarget,setAssignTarget]=useState("");
 const[periodPreset,setPeriodPreset]=useState("month");
 const[periodFrom,setPeriodFrom]=useState(getPeriodRange("month").from);
 const[periodTo,setPeriodTo]=useState(getPeriodRange("month").to);
+
+/* v16: teleapo_callsをDBから直接取得（架電数・接触数の統一データソース） */
+const[tcalls,setTcalls]=useState([]);
+useEffect(()=>{
+(async()=>{
+const sb=await getSupabase();
+if(!sb)return;
+const{data,error}=await sb.from("teleapo_calls").select("called_at,caller_id,result,teleapo_id");
+if(!error&&data)setTcalls(data);
+})();
+},[]);
+const TC_CONNECTED=["connected_hold","connected_ng","materials_sent","appointed","callback"];
+const TC_APPOINTED=["appointed"];
 
 function setPeriod(preset){
 setPeriodPreset(preset);
@@ -5777,6 +6020,14 @@ if(sb){
 const{data:freshDeal}=yield sb.from("crm_deals").select("*, companies(*)").eq("id",dealResult.deal_id).single();
 if(freshDeal){
 const newCustomer=rowToCustomer(freshDeal);
+const todayStr=new Date().toISOString().slice(0,10);
+if(!newCustomer.stageHistory||newCustomer.stageHistory.length===0){
+newCustomer.stageHistory=[{stage:"③",date:todayStr,note:"アポ取得（テレアポ）",by:apoOwner}];
+}else{
+const hasThird=newCustomer.stageHistory.some((h)=>h.stage==="③"&&h.date===todayStr);
+if(!hasThird)newCustomer.stageHistory=[...newCustomer.stageHistory,{stage:"③",date:todayStr,note:"アポ取得（テレアポ）",by:apoOwner}];
+}
+yield sb.from("crm_deals").update({stage_history:newCustomer.stageHistory}).eq("id",freshDeal.id);
 setCustomers((cs)=>{
 const exists=cs.some((c)=>c.id===freshDeal.id);
 return exists?cs.map((c)=>c.id===freshDeal.id?newCustomer:c):[...cs,newCustomer];
@@ -5841,12 +6092,17 @@ return{...item,customer:cust,stageNo,oiDone};
 const rewardCount=apoWithStatus.filter((a)=>a.oiDone).length;
 
 
+/* v16: teleapo_callsベースに統一（KPIレポート・ダッシュボードと同一データソース） */
 function getStatsForPeriod(fromDate,toDate,ownerFilter){
-const targetLists=lists.filter((r)=>ownerFilter==="all"||r.owner===ownerFilter);
-const logsInRange=targetLists.flatMap((r)=>(r.callLogs||[]).filter((l)=>l.date>=fromDate&&l.date<=toDate));
-const calls=logsInRange.length;
-const contacts=logsInRange.filter((l)=>(l.tags||[l.result]).some((t)=>["contact","apo"].includes(t))).length;
-const apos=logsInRange.filter((l)=>(l.tags||[l.result]).includes("apo")).length;
+const filtered=tcalls.filter((tc)=>{
+const d=tc.called_at?.slice(0,10);
+if(!d||d<fromDate||d>toDate)return false;
+if(ownerFilter!=="all"&&tc.caller_id!==ownerFilter)return false;
+return true;
+});
+const calls=filtered.length;
+const contacts=filtered.filter((tc)=>TC_CONNECTED.includes(tc.result)).length;
+const apos=filtered.filter((tc)=>TC_APPOINTED.includes(tc.result)).length;
 return{calls,contacts,apos,
 contactRate:calls>0?Math.round(contacts/calls*100):0,
 apoRate:contacts>0?Math.round(apos/contacts*100):0};
@@ -6117,13 +6373,20 @@ React.createElement(Save,{size:isMobile?11:13}),isMobile?"CSV出力":"CSVエク�
 
 
 React.createElement("div",{style:{display:"grid",gridTemplateColumns:isMobile?"repeat(3,1fr)":isTablet?"repeat(3,1fr)":"repeat(6,1fr)",gap:isMobile?6:10,marginBottom:isMobile?10:14}},
-[
-{label:"総架電数",value:lists.filter((r)=>!isAdmin||true).reduce((s,r)=>isAdmin?s+r.callCount:r.owner===user.name?s+r.callCount:s,0),unit:"件",color:"#3b82f6",IcComp:Phone},
-{label:"接触数",value:lists.filter((r)=>(isAdmin||r.owner===user.name)&&(r.callTags||[]).includes("contact")).length,unit:"件",color:"#22c55e",IcComp:Check},
-{label:"アポ数",value:apoItems.filter((r)=>isAdmin||r.owner===user.name).length,unit:"件",color:"#3b82f6",IcComp:Star},
-{label:"接触率",value:`${(()=>{const c=lists.filter((r)=>isAdmin||r.owner===user.name).reduce((s,r)=>s+r.callCount,0);const ct=lists.filter((r)=>(isAdmin||r.owner===user.name)&&(r.callTags||[]).includes("contact")).length;return c>0?Math.round(ct/c*100):0;})()}%`,color:"#6c5ce7",IcComp:BarChart2},
-{label:"接触アポ率",value:`${(()=>{const ct=lists.filter((r)=>(isAdmin||r.owner===user.name)&&(r.callTags||[]).includes("contact")).length;const ap=apoItems.filter((r)=>isAdmin||r.owner===user.name).length;return ct>0?Math.round(ap/ct*100):0;})()}%`,color:"#60a5fa",IcComp:ArrowUp},
-{label:"アポ率",value:`${(()=>{const c=lists.filter((r)=>isAdmin||r.owner===user.name).reduce((s,r)=>s+r.callCount,0);const ap=apoItems.filter((r)=>isAdmin||r.owner===user.name).length;return c>0?Math.round(ap/c*100):0;})()}%`,color:"#a78bfa",IcComp:ArrowUp}].
+/* v16: tcalls (teleapo_calls) ベースのサマリーカード */
+(()=>{
+const myTc=tcalls.filter((tc)=>isAdmin||tc.caller_id===user.name);
+const totalCalls=myTc.length;
+const totalContacts=myTc.filter((tc)=>TC_CONNECTED.includes(tc.result)).length;
+const totalApos=myTc.filter((tc)=>TC_APPOINTED.includes(tc.result)).length;
+return[
+{label:"総架電数",value:totalCalls,unit:"件",color:"#3b82f6",IcComp:Phone},
+{label:"接触数",value:totalContacts,unit:"件",color:"#22c55e",IcComp:Check},
+{label:"アポ数",value:totalApos,unit:"件",color:"#3b82f6",IcComp:Star},
+{label:"接触率",value:`${totalCalls>0?Math.round(totalContacts/totalCalls*100):0}%`,color:"#6c5ce7",IcComp:BarChart2},
+{label:"接触アポ率",value:`${totalContacts>0?Math.round(totalApos/totalContacts*100):0}%`,color:"#60a5fa",IcComp:ArrowUp},
+{label:"アポ率",value:`${totalCalls>0?Math.round(totalApos/totalCalls*100):0}%`,color:"#a78bfa",IcComp:ArrowUp}];
+})().
 map((kpi,i)=>
 React.createElement("div",{key:i,style:{background:"#f8faff",border:`1px solid ${kpi.badge?"#f59e0b44":"#dde3f0"}`,borderRadius:12,padding:"12px 14px",position:"relative"}},
 kpi.badge&&React.createElement("div",{style:{position:"absolute",top:6,right:6,fontSize:9,color:"#f59e0b",fontWeight:700,letterSpacing:"0.05em"}},"\u5831\u916C\u5BFE\u8C61"),
@@ -6144,7 +6407,8 @@ React.createElement("div",{style:{background:"#fff",border:"1px solid #e8edf5",b
 React.createElement("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:6,alignItems:"center"}},
 React.createElement("div",{style:{fontSize:12,color:"#64748b"}},"\u672C\u65E5\u306E\u67B6\u96FB\u9032\u6357\uFF08\u76EE\u6A19: ",DAILY_CALL_TARGET,"\u4EF6\uFF09"),
 (()=>{
-const c=lists.filter((r)=>isAdmin||r.owner===user.name).reduce((s,r)=>s+r.callCount,0);
+/* v16: 本日の架電数をtcallsから正確に取得 */
+const c=tcalls.filter((tc)=>{if(!isAdmin&&tc.caller_id!==user.name)return false;return tc.called_at?.slice(0,10)===today;}).length;
 return(
 React.createElement("div",{style:{fontSize:12,fontWeight:700,color:c>=DAILY_CALL_TARGET?"#22c55e":"#f59e0b",fontFamily:"'DM Mono',monospace"}},
 c," / ",DAILY_CALL_TARGET,"\u4EF6 ",c>=DAILY_CALL_TARGET&&" 達成"
@@ -6153,7 +6417,7 @@ c," / ",DAILY_CALL_TARGET,"\u4EF6 ",c>=DAILY_CALL_TARGET&&" 達成"
 })()
 ),
 (()=>{
-const c=lists.filter((r)=>isAdmin||r.owner===user.name).reduce((s,r)=>s+r.callCount,0);
+const c=tcalls.filter((tc)=>{if(!isAdmin&&tc.caller_id!==user.name)return false;return tc.called_at?.slice(0,10)===today;}).length;
 return(
 React.createElement("div",{style:{height:8,background:"#e8edf5",borderRadius:4,overflow:"hidden"}},
 React.createElement("div",{style:{height:"100%",width:`${Math.min(c/DAILY_CALL_TARGET*100,100)}%`,background:c>=DAILY_CALL_TARGET?"#22c55e":"#3b82f6",borderRadius:4,transition:"width 0.5s ease"}})
@@ -6273,7 +6537,7 @@ style:{accentColor:"#3b82f6",cursor:"pointer"}})
 
 
 React.createElement("td",{style:{padding:"8px 6px",textAlign:"center",width:32}},
-React.createElement("span",{style:{display:"inline-block",width:8,height:8,borderRadius:"50%",background:STAGE_DOT[item.reachedStage]||"#e2e8f0"}})
+React.createElement("span",{style:{display:"inline-block",width:8,height:8,borderRadius:"50%",background:getStageDotColor(item)}})
 ),
 
 React.createElement("td",{style:{padding:"8px 10px"}},
@@ -6289,7 +6553,16 @@ item.contact?
 React.createElement(React.Fragment,null,item.contact,item.title&&React.createElement("span",{style:{marginLeft:6,opacity:0.7}},item.title)):
 React.createElement("span",{style:{color:"#cbd5e1",fontStyle:"italic"}},"\u62C5\u5F53\u8005\u672A\u8A2D\u5B9A"),
 
-isAdmin&&React.createElement("span",{style:{marginLeft:8,background:"#ede9fe",borderRadius:4,padding:"1px 6px",fontSize:10,color:"#6c5ce7",fontWeight:600}},item.owner)
+/* v18: バッジはステータスを達成した架電者(caller_id)を表示。item.ownerはリスト割り振りなので使わない */
+(()=>{
+if(!isAdmin||!isStageDotHighlight(item)||!item.callLogs||item.callLogs.length===0)return null;
+const targetTags=item.reachedStage==="appointed"?["apo"]:item.reachedStage==="materials"?["material"]:item.lastCallResult==="callback"?["timing"]:[];
+const achiever=[...item.callLogs].reverse().find((log)=>log.tags&&log.tags.some((t)=>targetTags.includes(t)));
+const name=achiever?.by||item.callLogs[item.callLogs.length-1].by||"";
+if(!name)return null;
+const dotColor=getStageDotColor(item);
+return React.createElement("span",{style:{marginLeft:8,background:dotColor==="#3b82f6"?"#dbeafe":"#fef2f2",borderRadius:4,padding:"1px 6px",fontSize:10,color:dotColor==="#3b82f6"?"#3b82f6":"#ef4444",fontWeight:600}},name);
+})()
 )
 )
 )
@@ -6937,7 +7210,8 @@ onImport:handleCSVImportFromModal,
 sourceList:sourceList,
 userName:user.name,
 existingLists:lists,
-salesMembers:salesMembers}
+salesMembers:salesMembers,
+areaRules:areaRules}
 )
 
 ));
@@ -6985,16 +7259,28 @@ React.createElement("circle",{cx:"12",cy:"12",r:"10"}),React.createElement("path
 
 
 
-const OWNER_COLORS={
-"岡（管理者）":{bg:"#fee2e2",text:"#dc2626",dot:"#dc2626"},
-"吉村":{bg:"#dbeafe",text:"#2563eb",dot:"#3b82f6"},
-"大原":{bg:"#d1fae5",text:"#059669",dot:"#10b981"},
-"小島":{bg:"#ede9fe",text:"#7c3aed",dot:"#8b5cf6"},
-"まゆな":{bg:"#fef3c7",text:"#d97706",dot:"#f59e0b"},
-"ななみ":{bg:"#fce7f3",text:"#be185d",dot:"#ec4899"}
-};
+/* v16: ハッシュベースの自動担当者カラー（メンバー追加時にコード変更不要） */
+const _OC_PALETTE=[
+{bg:"#dbeafe",text:"#2563eb",dot:"#3b82f6"},
+{bg:"#d1fae5",text:"#059669",dot:"#10b981"},
+{bg:"#ede9fe",text:"#7c3aed",dot:"#8b5cf6"},
+{bg:"#fef3c7",text:"#d97706",dot:"#f59e0b"},
+{bg:"#fce7f3",text:"#be185d",dot:"#ec4899"},
+{bg:"#fee2e2",text:"#dc2626",dot:"#ef4444"},
+{bg:"#ccfbf1",text:"#0d9488",dot:"#14b8a6"},
+{bg:"#e0e7ff",text:"#4338ca",dot:"#6366f1"},
+{bg:"#fef9c3",text:"#a16207",dot:"#eab308"},
+{bg:"#f3e8ff",text:"#9333ea",dot:"#a855f7"}
+];
+const _ocCache={};
 const DEF_OC={bg:"#f1f5f9",text:"#64748b",dot:"#94a3b8"};
-const ownerColor=(n)=>OWNER_COLORS[n]??DEF_OC;
+const ownerColor=(n)=>{
+if(!n)return DEF_OC;
+if(_ocCache[n])return _ocCache[n];
+let h=0;for(let i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))&0xffff;
+_ocCache[n]=_OC_PALETTE[h%_OC_PALETTE.length];
+return _ocCache[n];
+};
 
 const EVENT_TYPES={
 nextAction:{label:"次回アクション（顧客）",Icon:_CalIcTarget,color:"#2563eb",bg:"#dbeafe",border:"#bfdbfe"},
@@ -7918,26 +8204,53 @@ const actions=useMemo(()=>{
 const URGENT_STAGES=new Set(["④","⑤","⑥","⑦"]);
 const items=[];
 customers.forEach((c)=>{
-if(c.nextAction?.date===todayStr){
+if(!c.nextAction?.date)return;
+const isToday=c.nextAction.date===todayStr;
+const isOverdue=c.nextAction.date<todayStr;
+if(isToday||isOverdue){
 items.push({
-id:`c-${c.id}`,ownerName:c.owner,company:c.company,
+id:`c-${c.id}`,type:"customer",ownerName:c.owner,company:c.company,
 contact:c.contact,action:c.nextAction.content||"次回アクション",
-stage:c.stage,time:c.nextAction.time||"",urgent:URGENT_STAGES.has(c.stage)
+stage:c.stage,time:c.nextAction.time||"",urgent:URGENT_STAGES.has(c.stage)||isOverdue,
+overdue:isOverdue,nextActionDate:c.nextAction.date,
+_dealId:c.id,_companyId:c._companyId
 });
 }
 });
 recontacts.filter((r)=>r.status==="active").forEach((r)=>{
-if(r.nextAction?.date===todayStr){
+if(!r.nextAction?.date)return;
+const isToday=r.nextAction.date===todayStr;
+const isOverdue=r.nextAction.date<todayStr;
+if(isToday||isOverdue){
 items.push({
-id:`r-${r.id}`,ownerName:r.owner,company:r.company,
+id:`r-${r.id}`,type:"recontact",ownerName:r.owner,company:r.company,
 contact:r.contact,action:r.nextAction.content||"追客アクション",
-stage:r.stage||"①",time:r.nextAction.time||"",urgent:false
+stage:r.stage||"①",time:r.nextAction.time||"",urgent:isOverdue,
+overdue:isOverdue,nextActionDate:r.nextAction.date,
+_dealId:null,_companyId:null
+});
+}
+});
+/* v18: テレアポ次回架電予定を本日のアクションに追加 */
+teleapoLists.forEach((t)=>{
+if(!t.nextCallDate)return;
+const isToday=t.nextCallDate===todayStr;
+const isOverdue=t.nextCallDate<todayStr;
+if(isToday||isOverdue){
+items.push({
+id:`t-${t.id}`,type:"teleapo",ownerName:t.owner,company:t.company,
+contact:t.contact,action:t.nextCallNote||(isOverdue?"架電予定（期限超過）":"架電予定"),
+stage:"架電",time:"",urgent:isOverdue,teleapoId:t.id,
+overdue:isOverdue,nextCallDate:t.nextCallDate
 });
 }
 });
 const filtered=isAdmin?items:items.filter((a)=>a.ownerName===user.name);
-return filtered.sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
-},[customers,recontacts,todayStr,isAdmin,user.name]);
+return filtered.sort((a,b)=>{
+if(a.urgent!==b.urgent)return a.urgent?-1:1;
+return(a.time||"99:99").localeCompare(b.time||"99:99");
+});
+},[customers,recontacts,teleapoLists,todayStr,isAdmin,user.name]);
 
 
 const[notice,saveNotice]=useNotice();
@@ -7950,12 +8263,30 @@ const[noticeDraft,setNoticeDraft]=useState(null);
 
 const[sourceList,setSourceList]=useState([...SOURCE_LIST]);
 
+/* v16: エリア→担当者割り振りルール（app_settingsに永続化） */
+const[areaRules,setAreaRules]=useState([]);
+useEffect(()=>{
+(async()=>{
+const sb=await getSupabase();
+if(!sb)return;
+const{data}=await sb.from("app_settings").select("value").eq("key","crm_area_rules").maybeSingle();
+if(data?.value){try{setAreaRules(JSON.parse(data.value));}catch(e){}}
+})();
+},[]);
+
 const gcal=useGoogleCalendar();
 
 
 
 
-const[clerkTodos,setClerkTodos]=useClerkTodos();
+/* ──────────────────────────────────────────────────────────
+   ⚠️ 宣言順序に注意（Temporal Dead Zone）
+   clerkTodos → createClerkTodo → auto-remind useEffect
+   の順番を崩すと ReferenceError になる。
+   auto-remind は clerkTodos と createClerkTodo を参照するため、
+   必ずこの2つより後に配置すること。
+   ────────────────────────────────────────────────────────── */
+const[clerkTodos,setClerkTodos,clerkTodosLoaded]=useClerkTodos();
 
 
 function createClerkTodo({customerId,company,contact,email,owner,type,triggerStage,memo}){
@@ -7979,6 +8310,35 @@ if(error){console.error("clerk_todos insert error:",error);return;}
 if(data)setClerkTodos((ts)=>ts.map((t)=>t.id===tempId?rowToClerkTodo(data):t));
 })();
 }
+
+/* v18: 7日以上放置のアクション → 事務リマインドTODO自動追加
+   ⚠️ この useEffect は clerkTodos / createClerkTodo より後に配置必須
+   ⚠️ useRef で1回だけ実行。clerkTodos.length を deps に入れると
+     createClerkTodo → setClerkTodos → length変化 → re-run の連鎖が起きる */
+const autoRemindRan=useRef(false);
+useEffect(()=>{
+if(!clerkTodosLoaded||!actions||actions.length===0||autoRemindRan.current)return;
+autoRemindRan.current=true;
+const sevenDaysAgo=new Date();sevenDaysAgo.setDate(sevenDaysAgo.getDate()-7);
+const cutoff=sevenDaysAgo.toISOString().slice(0,10);
+actions.forEach((a)=>{
+if(!a.overdue)return;
+const actionDate=a.nextActionDate||a.nextCallDate;
+if(!actionDate||actionDate>cutoff)return;
+const dupKey=a.type==="teleapo"?`remind-t-${a.id}`:`remind-${a.id}`;
+const alreadyExists=clerkTodos.some((t)=>
+t.type==="reminder"&&t.status==="pending"&&t.memo&&t.memo.includes(dupKey)
+);
+if(alreadyExists)return;
+createClerkTodo({
+customerId:a._dealId||null,
+company:a.company,contact:a.contact,email:"",
+owner:a.ownerName,type:"reminder",
+triggerStage:null,
+memo:`【自動リマインド】${a.action}（予定日: ${actionDate}）[${dupKey}]`
+});
+});
+},[actions,clerkTodosLoaded]);
 
 const pendingCount=lostRequests.filter((r)=>r.status==="pending").length;
 const recontactCount=recontacts.filter((r)=>r.status==="active").length;
@@ -8454,7 +8814,8 @@ setSourceList:setSourceList,
 lists:teleapoLists,
 setLists:setTeleapoLists,
 onCreateTodo:createClerkTodo,
-salesMembers:salesMembers}
+salesMembers:salesMembers,
+areaRules:areaRules}
 ),
 
 activeNav===2&&
@@ -8483,7 +8844,8 @@ onReject:handleReject,
 onUpdate:handleLostUpdate,
 onSendToRecontact:handleSendToRecontact,
 customers:customers,
-recontactSentIds:recontactSentIds}
+recontactSentIds:recontactSentIds,
+salesMembers:salesMembers}
 ),
 
 activeNav===4&&
@@ -8516,6 +8878,14 @@ isMobile:isMobile,
 isTablet:isTablet}
 ),
 
+activeNav===11&&
+React.createElement(ComparisonPage,{
+user:user,
+salesMembers:salesMembers,
+isMobile:isMobile,
+isTablet:isTablet}
+),
+
 activeNav===9&&isAdmin&&
 React.createElement(AdminSettingsPage,{
 notice:notice,
@@ -8524,7 +8894,9 @@ noticeOpen:noticeOpen,
 setNoticeOpen:setNoticeOpen,
 sourceList:sourceList,
 setSourceList:setSourceList,
-dbMembers:dbMembers}
+dbMembers:dbMembers,
+areaRules:areaRules,
+setAreaRules:setAreaRules}
 ),
 
 activeNav===10&&(isClerk||isAdmin)&&
@@ -8681,6 +9053,7 @@ document_send:{label:"資料送付",color:"#f59e0b",bg:"#fffbeb"},
 contract:{label:"契約書類",color:"#8b5cf6",bg:"#f5f3ff"},
 invoice:{label:"請求書",color:"#ec4899",bg:"#fdf2f8"},
 schedule:{label:"スケジュール調整",color:"#14b8a6",bg:"#f0fdfa"},
+reminder:{label:"リマインド",color:"#ef4444",bg:"#fef2f2"},
 other:{label:"その他",color:"#64748b",bg:"#f8fafc"}
 };
 
@@ -9091,6 +9464,280 @@ React.createElement(Check,{size:14})," \u9001\u4FE1\u6E08\u307F\u30FB\u5B8C\u4E8
 
 
 
+/* ============================================================
+   ComparisonPage — 対比ページ（任意の2期間を比較）
+   ============================================================ */
+function ComparisonPage({user,salesMembers=[],isMobile=false,isTablet=false}){
+const isAdmin=user.role==="admin";
+const pad2=(n)=>String(n).padStart(2,"0");
+const toStr=(d)=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const fmtMonth=(d)=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
+
+/* --- state --- */
+const[tcalls,setTcalls]=useState([]);
+const[aStart,setAStart]=useState("");
+const[aEnd,setAEnd]=useState("");
+const[bStart,setBStart]=useState("");
+const[bEnd,setBEnd]=useState("");
+const[selMember,setSelMember]=useState("all");
+const effectiveMember=isAdmin?selMember:user.name;
+
+/* --- fetch teleapo_calls --- */
+useEffect(()=>{
+(async()=>{
+const sb=await getSupabase();
+if(!sb)return;
+const{data,error}=await sb.from("teleapo_calls").select("called_at,caller_id,result");
+if(!error&&data)setTcalls(data);
+})();
+},[]);
+
+/* --- members list --- */
+const allMembers=useMemo(()=>{
+const set=new Set();
+tcalls.forEach((tc)=>{if(tc.caller_id)set.add(tc.caller_id);});
+salesMembers.forEach((m)=>{if(m.name)set.add(m.name);});
+return Array.from(set).sort();
+},[tcalls,salesMembers]);
+
+/* --- calc stats for a period --- */
+const CMP_CONNECTED=["connected_hold","connected_ng","materials_sent","appointed","callback"];
+const CMP_ABSENT=["no_answer"];
+const CMP_APPOINTED=["appointed"];
+
+function calcStats(from,to,member){
+if(!from||!to)return null;
+const filtered=tcalls.filter((tc)=>{
+const d=tc.called_at?.slice(0,10);
+if(!d||d<from||d>to)return false;
+if(member!=="all"&&tc.caller_id!==member)return false;
+return true;
+});
+const calls=filtered.length;
+const contacts=filtered.filter((tc)=>CMP_CONNECTED.includes(tc.result)).length;
+const absent=filtered.filter((tc)=>CMP_ABSENT.includes(tc.result)).length;
+const apos=filtered.filter((tc)=>CMP_APPOINTED.includes(tc.result)).length;
+return{calls,contacts,absent,apos,
+contactRate:calls>0?Math.round(contacts/calls*1000)/10:0,
+absentRate:calls>0?Math.round(absent/calls*1000)/10:0,
+apoRate:calls>0?Math.round(apos/calls*1000)/10:0};
+}
+
+function calcMemberStats(from,to){
+if(!from||!to)return[];
+return allMembers.map((name)=>{
+const s=calcStats(from,to,name);
+return{name,...s};
+});
+}
+
+/* --- monthly buckets for chart --- */
+function monthlyBuckets(from,to,member){
+if(!from||!to)return[];
+const buckets=[];
+let cur=new Date(from+"T00:00:00");
+const endD=new Date(to+"T00:00:00");
+while(cur<=endD){
+const y=cur.getFullYear(),m=cur.getMonth();
+const mStart=`${y}-${pad2(m+1)}-01`;
+const mEnd=toStr(new Date(y,m+1,0));
+const clampStart=mStart<from?from:mStart;
+const clampEnd=mEnd>to?to:mEnd;
+const s=calcStats(clampStart,clampEnd,member);
+buckets.push({label:`${m+1}月`,month:fmtMonth(cur),...s});
+cur=new Date(y,m+1,1);
+}
+return buckets;
+}
+
+const statsA=useMemo(()=>calcStats(aStart,aEnd,effectiveMember),[tcalls,aStart,aEnd,effectiveMember]);
+const statsB=useMemo(()=>calcStats(bStart,bEnd,effectiveMember),[tcalls,bStart,bEnd,effectiveMember]);
+const memberA=useMemo(()=>calcMemberStats(aStart,aEnd),[tcalls,aStart,aEnd,allMembers]);
+const memberB=useMemo(()=>calcMemberStats(bStart,bEnd),[tcalls,bStart,bEnd,allMembers]);
+const bucketsA=useMemo(()=>monthlyBuckets(aStart,aEnd,effectiveMember),[tcalls,aStart,aEnd,effectiveMember]);
+const bucketsB=useMemo(()=>monthlyBuckets(bStart,bEnd,effectiveMember),[tcalls,bStart,bEnd,effectiveMember]);
+
+/* --- chart data: align by relative month index --- */
+const chartData=useMemo(()=>{
+const maxLen=Math.max(bucketsA.length,bucketsB.length);
+const rows=[];
+for(let i=0;i<maxLen;i++){
+const a=bucketsA[i];
+const b=bucketsB[i];
+const label=a?a.label:(b?b.label:`${i+1}月`);
+rows.push({
+name:label,
+"A架電":a?a.calls:0,"B架電":b?b.calls:0,
+"A接触":a?a.contacts:0,"B接触":b?b.contacts:0,
+"Aアポ":a?a.apos:0,"Bアポ":b?b.apos:0
+});
+}
+return rows;
+},[bucketsA,bucketsB]);
+
+/* --- helpers --- */
+const deltaStr=(a,b)=>{
+if(a==null||b==null)return"—";
+const d=b-a;
+return(d>0?"+":"")+d;
+};
+const deltaPt=(a,b)=>{
+if(a==null||b==null)return"—";
+const d=Math.round((b-a)*10)/10;
+return(d>0?"+":"")+d+"pt";
+};
+const deltaColor=(a,b,invert=false)=>{
+if(a==null||b==null)return"#64748b";
+const better=invert?(b<a):(b>a);
+return better?"#22c55e":b===a?"#64748b":"#ef4444";
+};
+
+const hasBoth=statsA&&statsB;
+const inputStyle={padding:"7px 10px",borderRadius:8,border:"1px solid #e8edf5",fontSize:13,fontFamily:"'Noto Sans JP',sans-serif",background:"#fff",color:"#0f172a"};
+
+/* --- render --- */
+return(
+React.createElement("div",{style:{flex:1,overflow:"auto",background:"#f0f4ff",padding:isMobile?"12px":"24px 28px",fontFamily:"'Noto Sans JP',sans-serif"}},
+
+/* header */
+React.createElement("div",{style:{marginBottom:20}},
+React.createElement("h2",{style:{fontSize:isMobile?16:20,fontWeight:800,color:"#0f172a",margin:0}},"期間対比"),
+React.createElement("p",{style:{fontSize:12,color:"#64748b",marginTop:4}},"任意の2期間を選択してテレアポ指標を比較")
+),
+
+/* period pickers + member filter */
+React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:12,marginBottom:20,alignItems:"flex-end"}},
+
+React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+React.createElement("label",{style:{fontSize:11,fontWeight:700,color:"#3b82f6"}},"期間A"),
+React.createElement("div",{style:{display:"flex",gap:6,alignItems:"center"}},
+React.createElement("input",{type:"date",value:aStart,onChange:(e)=>setAStart(e.target.value),style:inputStyle}),
+React.createElement("span",{style:{color:"#94a3b8",fontSize:12}},"〜"),
+React.createElement("input",{type:"date",value:aEnd,onChange:(e)=>setAEnd(e.target.value),style:inputStyle})
+)
+),
+
+React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+React.createElement("label",{style:{fontSize:11,fontWeight:700,color:"#f59e0b"}},"期間B"),
+React.createElement("div",{style:{display:"flex",gap:6,alignItems:"center"}},
+React.createElement("input",{type:"date",value:bStart,onChange:(e)=>setBStart(e.target.value),style:inputStyle}),
+React.createElement("span",{style:{color:"#94a3b8",fontSize:12}},"〜"),
+React.createElement("input",{type:"date",value:bEnd,onChange:(e)=>setBEnd(e.target.value),style:inputStyle})
+)
+),
+
+isAdmin&&React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+React.createElement("label",{style:{fontSize:11,fontWeight:700,color:"#64748b"}},"担当者"),
+React.createElement("select",{value:selMember,onChange:(e)=>setSelMember(e.target.value),
+style:{...inputStyle,minWidth:120}},
+React.createElement("option",{value:"all"},"全体"),
+allMembers.map((n)=>React.createElement("option",{key:n,value:n},n))
+)
+)
+),
+
+/* empty state */
+(!aStart||!aEnd||!bStart||!bEnd)?
+React.createElement("div",{style:{textAlign:"center",padding:"60px 20px",color:"#94a3b8"}},
+React.createElement(Columns,{size:32,color:"#cbd5e1",style:{margin:"0 auto 12px"}}),
+React.createElement("div",{style:{fontSize:14,fontWeight:600}},"期間AとBを選択してください"),
+React.createElement("div",{style:{fontSize:12,marginTop:6}},"例: 2025年3月 vs 2026年3月")
+):
+
+React.createElement("div",null,
+
+/* summary cards */
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(5,1fr)",gap:10,marginBottom:20}},
+[
+{label:"架電数",a:statsA?.calls,b:statsB?.calls,unit:"件",inv:false},
+{label:"接触数",a:statsA?.contacts,b:statsB?.contacts,unit:"件",inv:false},
+{label:"接触率",a:statsA?.contactRate,b:statsB?.contactRate,unit:"%",inv:false,isPt:true},
+{label:"不在率",a:statsA?.absentRate,b:statsB?.absentRate,unit:"%",inv:true,isPt:true},
+{label:"アポ率",a:statsA?.apoRate,b:statsB?.apoRate,unit:"%",inv:false,isPt:true}
+].map((kpi,i)=>
+React.createElement("div",{key:i,style:{background:"#fff",border:"1px solid #e8edf5",borderRadius:12,padding:"14px 16px"}},
+React.createElement("div",{style:{fontSize:11,color:"#64748b",fontWeight:600,marginBottom:8}},kpi.label),
+React.createElement("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:4}},
+React.createElement("span",{style:{fontSize:12,color:"#3b82f6",fontWeight:600}},"A: ",kpi.a!=null?kpi.a+kpi.unit:"—"),
+React.createElement("span",{style:{fontSize:12,color:"#f59e0b",fontWeight:600}},"B: ",kpi.b!=null?kpi.b+kpi.unit:"—")
+),
+hasBoth&&React.createElement("div",{style:{fontSize:13,fontWeight:800,color:deltaColor(kpi.a,kpi.b,kpi.inv),textAlign:"center",padding:"4px 0",background:deltaColor(kpi.a,kpi.b,kpi.inv)+"15",borderRadius:6}},
+kpi.isPt?deltaPt(kpi.a,kpi.b):deltaStr(kpi.a,kpi.b)+(kpi.isPt?"":"件"))
+))
+),
+
+/* monthly chart */
+chartData.length>1&&React.createElement("div",{style:{background:"#fff",border:"1px solid #e8edf5",borderRadius:12,padding:"18px 20px",marginBottom:20}},
+React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:14}},"月別推移"),
+React.createElement(ResponsiveContainer,{width:"100%",height:260},
+React.createElement(BarChart,{data:chartData,barGap:2,barCategoryGap:"20%"},
+React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:"#f1f5f9"}),
+React.createElement(XAxis,{dataKey:"name",tick:{fontSize:11,fill:"#64748b"}}),
+React.createElement(YAxis,{tick:{fontSize:11,fill:"#94a3b8"}}),
+React.createElement(Tooltip,{contentStyle:{borderRadius:8,fontSize:12}}),
+React.createElement(Legend,{wrapperStyle:{fontSize:11}}),
+React.createElement(Bar,{dataKey:"A架電",fill:"#93c5fd",radius:[3,3,0,0]}),
+React.createElement(Bar,{dataKey:"B架電",fill:"#fbbf24",radius:[3,3,0,0]}),
+React.createElement(Bar,{dataKey:"A接触",fill:"#3b82f6",radius:[3,3,0,0]}),
+React.createElement(Bar,{dataKey:"B接触",fill:"#f59e0b",radius:[3,3,0,0]}),
+React.createElement(Bar,{dataKey:"Aアポ",fill:"#1e3a5f",radius:[3,3,0,0]}),
+React.createElement(Bar,{dataKey:"Bアポ",fill:"#b45309",radius:[3,3,0,0]})
+)
+)
+),
+
+/* member table */
+React.createElement("div",{style:{background:"#fff",border:"1px solid #e8edf5",borderRadius:12,padding:"18px 20px",overflow:"auto"}},
+React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:14}},"担当者別比較"),
+React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12}},
+React.createElement("thead",null,
+React.createElement("tr",{style:{borderBottom:"2px solid #e8edf5"}},
+React.createElement("th",{style:{padding:"8px 10px",textAlign:"left",color:"#64748b",fontWeight:700}},"担当者"),
+["架電数","接触数","接触率","アポ数","アポ率"].map((h)=>
+React.createElement("th",{key:h,colSpan:3,style:{padding:"8px 6px",textAlign:"center",color:"#64748b",fontWeight:700,borderLeft:"1px solid #f1f5f9"}},h)
+)
+),
+React.createElement("tr",{style:{borderBottom:"1px solid #e8edf5",fontSize:11}},
+React.createElement("td",null),
+Array(5).fill(null).flatMap((_,i)=>
+["A","B","差"].map((l,j)=>
+React.createElement("td",{key:`${i}-${j}`,style:{padding:"4px 6px",textAlign:"center",color:l==="A"?"#3b82f6":l==="B"?"#f59e0b":"#64748b",fontWeight:600,borderLeft:j===0?"1px solid #f1f5f9":"none"}},l)
+)
+)
+)
+),
+React.createElement("tbody",null,
+allMembers.filter((n)=>effectiveMember==="all"||n===effectiveMember).map((name)=>{
+const a=memberA.find((m)=>m.name===name)||{};
+const b=memberB.find((m)=>m.name===name)||{};
+const metrics=[
+{a:a.calls,b:b.calls,isPt:false},
+{a:a.contacts,b:b.contacts,isPt:false},
+{a:a.contactRate,b:b.contactRate,isPt:true},
+{a:a.apos,b:b.apos,isPt:false},
+{a:a.apoRate,b:b.apoRate,isPt:true}
+];
+return React.createElement("tr",{key:name,style:{borderBottom:"1px solid #f1f5f9"}},
+React.createElement("td",{style:{padding:"8px 10px",fontWeight:600,color:"#0f172a",whiteSpace:"nowrap"}},name),
+metrics.flatMap((met,mi)=>{
+const dVal=met.isPt?deltaPt(met.a||0,met.b||0):deltaStr(met.a||0,met.b||0);
+const dCol=deltaColor(met.a||0,met.b||0);
+return[
+React.createElement("td",{key:`${mi}-a`,style:{padding:"6px",textAlign:"center",borderLeft:"1px solid #f1f5f9"}},met.a!=null?met.a:"—"),
+React.createElement("td",{key:`${mi}-b`,style:{padding:"6px",textAlign:"center"}},met.b!=null?met.b:"—"),
+React.createElement("td",{key:`${mi}-d`,style:{padding:"6px",textAlign:"center",color:dCol,fontWeight:700,fontSize:11}},dVal)
+];
+})
+);
+})
+)
+)
+)
+)
+));
+}
+
+
 function KPIReportPage({user,customers=[],teleapoLists=[],isMobile=false,isTablet=false}){
 const isAdmin=user.role==="admin";
 
@@ -9099,8 +9746,32 @@ const[subTab,setSubTab]=useState("rates");
 const[period,setPeriod]=useState("month");
 const[selMember,setSelMember]=useState("all");
 const[selPhase,setSelPhase]=useState("teleapo");
+const[teleapoCalls,setTeleapoCalls]=useState([]);
 
 const effectiveMember=isAdmin?selMember:user.name;
+
+/* --- v16: teleapo_callsをDBから取得（架電数・接触数の正確な計算用） --- */
+useEffect(()=>{
+(async()=>{
+const sb=await getSupabase();
+if(!sb)return;
+const{data,error}=await sb.from("teleapo_calls").select("called_at,caller_id,result");
+if(!error&&data)setTeleapoCalls(data);
+else console.error("teleapo_calls fetch error:",error);
+})();
+},[]);
+
+/* v17: activitiesテーブルからstage_changeイベントを取得（s3〜s7の正確なデータソース） */
+const[stageActivities,setStageActivities]=useState([]);
+useEffect(()=>{
+(async()=>{
+const sb=await getSupabase();
+if(!sb)return;
+const{data,error}=await sb.from("activities").select("created_at,performed_by,metadata").eq("activity_type","stage_change");
+if(!error&&data)setStageActivities(data);
+else console.error("activities fetch error:",error);
+})();
+},[]);
 
 
 const pad2=(n)=>String(n).padStart(2,"0");
@@ -9112,8 +9783,10 @@ const allMembers=useMemo(()=>{
 const set=new Set();
 customers.forEach((c)=>(c.stageHistory||[]).forEach((h)=>{if(h.by)set.add(h.by);}));
 teleapoLists.forEach((t)=>{if(t.owner)set.add(t.owner);});
+teleapoCalls.forEach((tc)=>{if(tc.caller_id)set.add(tc.caller_id);});
+stageActivities.forEach((a)=>{if(a.performed_by)set.add(a.performed_by);});
 return Array.from(set).sort();
-},[customers,teleapoLists]);
+},[customers,teleapoLists,teleapoCalls,stageActivities]);
 
 
 const periodRange=useMemo(()=>{
@@ -9152,26 +9825,37 @@ const inRange=(date,s,e)=>date&&date>=s&&date<=e;
 
 
 
+/* v17: callback含む（担当者と会話できた＝接触）、不在数追加 */
+const CONNECTED_RESULTS=["connected_hold","connected_ng","materials_sent","appointed","callback"];
+const ABSENT_RESULTS=["no_answer"];
 const countAllStages=(startD,endD,member)=>{
-const c={s1:0,s2:0,s3:0,s4:0,s5:0,s6:0,s7:0};
-customers.forEach((cust)=>{
-(cust.stageHistory||[]).forEach((h)=>{
-if(!inRange(h.date,startD,endD))return;
-if(member!=="all"&&h.by!==member)return;
-if(h.stage==="①")c.s1++;
-if(h.stage==="②")c.s2++;
-if(h.stage==="③")c.s3++;
-if(h.stage==="④")c.s4++;
-if(h.stage==="⑤")c.s5++;
-if(h.stage==="⑥")c.s6++;
-if(h.stage==="⑦")c.s7++;
+const c={s1:0,s2:0,s3:0,s4:0,s5:0,s6:0,s7:0,absent:0};
+/* s1, s2 from teleapo_calls */
+teleapoCalls.forEach((tc)=>{
+const d=tc.called_at?.slice(0,10);
+if(!inRange(d,startD,endD))return;
+if(member!=="all"&&tc.caller_id!==member)return;
+c.s1++;
+if(CONNECTED_RESULTS.includes(tc.result))c.s2++;
+if(ABSENT_RESULTS.includes(tc.result))c.absent++;
 });
+/* s3~s7 from activities (stage_change events) */
+stageActivities.forEach((a)=>{
+const d=a.created_at?.slice(0,10);
+if(!inRange(d,startD,endD))return;
+if(member!=="all"&&a.performed_by!==member)return;
+const toStage=a.metadata?.to_stage;
+if(toStage==="③")c.s3++;
+if(toStage==="④")c.s4++;
+if(toStage==="⑤")c.s5++;
+if(toStage==="⑥")c.s6++;
+if(toStage==="⑦")c.s7++;
 });
 return c;
 };
 
-const curAll=useMemo(()=>countAllStages(periodRange.start,periodRange.end,effectiveMember),[customers,periodRange,effectiveMember]);
-const prevAll=useMemo(()=>countAllStages(periodRange.prevStart,periodRange.prevEnd,effectiveMember),[customers,periodRange,effectiveMember]);
+const curAll=useMemo(()=>countAllStages(periodRange.start,periodRange.end,effectiveMember),[stageActivities,teleapoCalls,periodRange,effectiveMember]);
+const prevAll=useMemo(()=>countAllStages(periodRange.prevStart,periodRange.prevEnd,effectiveMember),[stageActivities,teleapoCalls,periodRange,effectiveMember]);
 
 
 const pct=(num,den)=>den>0?Math.round(num/den*1000)/10:0;
@@ -9194,6 +9878,7 @@ details:(s)=>[
 {label:"接触数",value:s.s2,unit:"件",color:"#60a5fa"},
 {label:"アポ数",value:s.s3,unit:"件",color:"#1d4ed8"},
 {label:"接触率",value:pct(s.s2,s.s1),unit:"%",color:"#6c5ce7",sub:`${s.s2}/${s.s1}`},
+{label:"不在率",value:pct(s.absent,s.s1),unit:"%",color:"#f59e0b",sub:`${s.absent}/${s.s1}`},
 {label:"接触アポ率",value:pct(s.s3,s.s2),unit:"%",color:"#f59e0b",sub:`${s.s3}/${s.s2}`},
 {label:"アポ率",value:pct(s.s3,s.s1),unit:"%",color:"#a78bfa",sub:`${s.s3}/${s.s1}`}],
 
@@ -9292,6 +9977,23 @@ tableColumns:(s)=>[
 
 const phase=PHASES[selPhase];
 
+/* v16: 売上サマリー（成約フェーズ用） */
+const revenueSummary=useMemo(()=>{
+const{start,end,prevStart,prevEnd}=periodRange;
+let curRevenue=0,prevRevenue=0,curCount=0,prevCount=0;
+const byType={};
+customers.forEach((cust)=>{
+if(effectiveMember!=="all"&&cust.owner!==effectiveMember)return;
+const contractEntry=(cust.stageHistory||[]).find((h)=>h.stage==="⑦");
+if(!contractEntry)return;
+const d=contractEntry.date;
+const val=Number(cust.contractValue)||0;
+if(inRange(d,start,end)){curRevenue+=val;curCount++;const t=cust.contractType||"未設定";byType[t]=(byType[t]||0)+val;}
+if(inRange(d,prevStart,prevEnd)){prevRevenue+=val;prevCount++;}
+});
+return{curRevenue,prevRevenue,curCount,prevCount,byType};
+},[customers,periodRange,effectiveMember]);
+
 
 const chartData=useMemo(()=>{
 const{start,end}=periodRange;
@@ -9330,7 +10032,7 @@ phase.chartKeys.forEach((k)=>{entry[k.key]=s[k.stageKey];});
 phase.chartLines.forEach((l)=>{entry[l.key]=l.calc(s);});
 return entry;
 });
-},[customers,periodRange,period,effectiveMember,selPhase]);
+},[stageActivities,teleapoCalls,periodRange,period,effectiveMember,selPhase]);
 
 
 const memberStats=useMemo(()=>{
@@ -9340,7 +10042,7 @@ const s=countAllStages(periodRange.start,periodRange.end,name);
 const p=countAllStages(periodRange.prevStart,periodRange.prevEnd,name);
 return{name,cur:s,prev:p};
 }).sort((a,b)=>phase.mainRate(b.cur)-phase.mainRate(a.cur));
-},[customers,periodRange,effectiveMember,allMembers,selPhase]);
+},[stageActivities,teleapoCalls,periodRange,effectiveMember,allMembers,selPhase]);
 
 
 const SCORE_AXES=[
@@ -9549,6 +10251,46 @@ prevLabel[period]," ",React.createElement(DeltaBadge,{val:dlt})
 })(),
 
 
+/* v16: 売上サマリー（成約フェーズ選択時のみ表示） */
+selPhase==="contract"&&revenueSummary.curCount>0&&
+React.createElement("div",{style:{...cardS,marginBottom:isMobile?14:20,borderTop:"3px solid #22c55e"}},
+React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#15803d",marginBottom:12}},"\uD83D\uDCB0 "+periodLabels[period]+"\u58F2\u4E0A\u30B5\u30DE\u30EA\u30FC"),
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:12}},
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:10,color:"#64748b",marginBottom:2}},"\u58F2\u4E0A\u5408\u8A08"),
+React.createElement("div",{style:{fontSize:20,fontWeight:700,color:"#15803d",fontFamily:"'DM Mono',monospace"}},
+"\u00A5",revenueSummary.curRevenue.toLocaleString()
+),
+revenueSummary.prevRevenue>0&&
+React.createElement("div",{style:{fontSize:10,color:"#94a3b8",marginTop:2}},
+prevLabel[period]," ",React.createElement(DeltaBadge,{val:delta(revenueSummary.curRevenue,revenueSummary.prevRevenue)})
+)
+),
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:10,color:"#64748b",marginBottom:2}},"\u6210\u7D04\u4EF6\u6570"),
+React.createElement("div",{style:{fontSize:20,fontWeight:700,color:"#0f172a",fontFamily:"'DM Mono',monospace"}},
+revenueSummary.curCount,"\u4EF6"
+)
+),
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:10,color:"#64748b",marginBottom:2}},"\u5E73\u5747\u5358\u4FA1"),
+React.createElement("div",{style:{fontSize:16,fontWeight:700,color:"#3b82f6",fontFamily:"'DM Mono',monospace"}},
+"\u00A5",(revenueSummary.curCount>0?Math.round(revenueSummary.curRevenue/revenueSummary.curCount):0).toLocaleString()
+)
+)
+),
+Object.keys(revenueSummary.byType).length>0&&
+React.createElement("div",{style:{marginTop:12,paddingTop:10,borderTop:"1px solid #e8edf5",display:"flex",gap:8,flexWrap:"wrap"}},
+Object.entries(revenueSummary.byType).map(([type,val])=>
+React.createElement("div",{key:type,style:{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"6px 12px",fontSize:11}},
+React.createElement("span",{style:{color:"#64748b"}},type," "),
+React.createElement("span",{style:{fontWeight:700,color:"#15803d",fontFamily:"'DM Mono',monospace"}},"\u00A5",val.toLocaleString())
+)
+)
+)
+),
+
+
 React.createElement("div",{style:{...cardS,marginBottom:isMobile?14:20}},
 React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:4}},
 periodLabels[period],"\u30C8\u30EC\u30F3\u30C9 ",effectiveMember!=="all"?`— ${effectiveMember}`:"— チーム全体"
@@ -9754,7 +10496,7 @@ React.createElement("div",{style:{marginTop:10,fontSize:10,color:"#94a3b8"}},"\u
 
 
 
-function AdminSettingsPage({notice,setNotice,noticeOpen,setNoticeOpen,sourceList,setSourceList,dbMembers=[]}){
+function AdminSettingsPage({notice,setNotice,noticeOpen,setNoticeOpen,sourceList,setSourceList,dbMembers=[],areaRules=[],setAreaRules}){
 
 const[memberList,setMemberList]=useState([]);
 useEffect(()=>{
@@ -10191,41 +10933,46 @@ React.createElement("span",{style:{fontSize:11,color:"#94a3b8"}},"\u4EF6")
 
 React.createElement("div",{style:cardStyle},
 React.createElement("div",{style:{fontSize:14,fontWeight:700,color:"#0f172a",marginBottom:6}},"\u30A8\u30EA\u30A2\u30FB\u696D\u7A2E\u30D5\u30A3\u30EB\u30BF\u30FC\u5272\u308A\u632F\u308A"),
-React.createElement("div",{style:{fontSize:12,color:"#94a3b8",marginBottom:16}},"\u7279\u5B9A\u306E\u30A8\u30EA\u30A2\u3084\u696D\u7A2E\u3092\u62C5\u5F53\u30E1\u30F3\u30D0\u30FC\u306B\u56FA\u5B9A\u3067\u304D\u307E\u3059\u3002"),
-[
-{pref:"愛知県",assign:"吉村"},
-{pref:"岐阜県",assign:"大原"},
-{pref:"三重県",assign:"小島"}].
-map((r,i)=>
+React.createElement("div",{style:{fontSize:12,color:"#94a3b8",marginBottom:16}},"\u7279\u5B9A\u306E\u30A8\u30EA\u30A2\u3092\u62C5\u5F53\u30E1\u30F3\u30D0\u30FC\u306B\u56FA\u5B9A\u3067\u304D\u307E\u3059\u3002CSV\u30A4\u30F3\u30DD\u30FC\u30C8\u6642\u306B\u4F4F\u6240\u304B\u3089\u90FD\u9053\u5E9C\u770C\u3092\u81EA\u52D5\u62BD\u51FA\u3057\u3001\u30EB\u30FC\u30EB\u306B\u5F93\u3063\u3066\u62C5\u5F53\u8005\u3092\u81EA\u52D5\u5272\u5F53\u3057\u307E\u3059\u3002"),
+areaRules.map((r,i)=>
 React.createElement("div",{key:i,style:{
 display:"flex",alignItems:"center",gap:12,marginBottom:10,
 padding:"10px 14px",background:"#f8faff",border:"1px solid #e8edf5",borderRadius:10
 }},
-React.createElement("span",{style:{fontSize:12,color:"#64748b",minWidth:64}},r.pref),
+React.createElement("select",{value:r.pref,onChange:(e)=>{const u=[...areaRules];u[i]={...u[i],pref:e.target.value};setAreaRules(u);},
+style:{minWidth:90,fontSize:13,color:"#0f172a",border:"1px solid #e8edf5",borderRadius:7,padding:"6px 10px",fontFamily:"'Noto Sans JP',sans-serif",background:"#fff"}},
+React.createElement("option",{value:""},"\u90FD\u9053\u5E9C\u770C"),
+JP_PREFS.map((p)=>React.createElement("option",{key:p,value:p},p))
+),
 React.createElement("span",{style:{color:"#c7d2fe",fontSize:12}},"\u2192"),
-React.createElement("select",{defaultValue:r.assign,style:{
-flex:1,fontSize:13,color:"#0f172a",border:"1px solid #e8edf5",
-borderRadius:7,padding:"6px 10px",fontFamily:"'Noto Sans JP',sans-serif",background:"#fff"
-}},
+React.createElement("select",{value:r.assign,onChange:(e)=>{const u=[...areaRules];u[i]={...u[i],assign:e.target.value};setAreaRules(u);},
+style:{flex:1,fontSize:13,color:"#0f172a",border:"1px solid #e8edf5",borderRadius:7,padding:"6px 10px",fontFamily:"'Noto Sans JP',sans-serif",background:"#fff"}},
 React.createElement("option",{value:""},"\uFF08\u6307\u5B9A\u306A\u3057\uFF09"),
 memberList.filter((m)=>m.active).map((m)=>React.createElement("option",{key:m.name,value:m.name},m.name))
 ),
-React.createElement("button",{style:{background:"#fff0f0",border:"1px solid #fecaca",borderRadius:6,padding:"5px 8px",fontSize:11,color:"#ef4444",cursor:"pointer"}},"\u524A\u9664")
+React.createElement("button",{onClick:()=>setAreaRules((p)=>p.filter((_,j)=>j!==i)),
+style:{background:"#fff0f0",border:"1px solid #fecaca",borderRadius:6,padding:"5px 8px",fontSize:11,color:"#ef4444",cursor:"pointer"}},"\u524A\u9664")
 )
 ),
-React.createElement("button",{style:{
+React.createElement("button",{onClick:()=>setAreaRules((p)=>[...p,{pref:"",assign:""}]),style:{
 background:"#f8faff",border:"1px dashed #c7d2fe",borderRadius:8,
 padding:"8px 16px",fontSize:12,color:"#6c5ce7",cursor:"pointer",
 fontFamily:"'Noto Sans JP',sans-serif",fontWeight:600,width:"100%",marginTop:4
-}},"\uFF0B \u30D5\u30A3\u30EB\u30BF\u30FC\u3092\u8FFD\u52A0")
-),
+}},"\uFF0B \u30D5\u30A3\u30EB\u30BF\u30FC\u3092\u8FFD\u52A0"),
 
 React.createElement("div",{style:{display:"flex",justifyContent:"flex-end",marginTop:16}},
-React.createElement("button",{style:{
+React.createElement("button",{onClick:_asyncToGenerator(function*(){
+const sb=yield getSupabase();if(!sb)return;
+const valid=areaRules.filter((r)=>r.pref&&r.assign);
+const{error}=yield sb.from("app_settings").upsert({key:"crm_area_rules",value:JSON.stringify(valid),app:"crm",description:"エリア→担当者割り振りルール"},{onConflict:"key"});
+if(error){alert("保存失敗: "+error.message);return;}
+setAreaRules(valid);alert("エリアルール "+valid.length+"件を保存しました");
+}),style:{
 background:"#6c5ce7",color:"#fff",border:"none",borderRadius:8,
 padding:"9px 22px",fontSize:13,fontWeight:600,cursor:"pointer",
 fontFamily:"'Noto Sans JP',sans-serif"
 }},"\u30EB\u30FC\u30EB\u3092\u4FDD\u5B58")
+)
 )
 )
 
